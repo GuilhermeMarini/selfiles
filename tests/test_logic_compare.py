@@ -167,8 +167,8 @@ class TestNonBooleanLogic:
         assert got.note == "nao parseavel como booleano"
 
     def test_the_text_coincidence_branch_is_unreachable_from_the_public_api(self):
-        """`_compare_logic` answers EQUIVALENT with 'texto coincidente (sem
-        parse)' when two unparseable bodies normalise to the same text -- but
+        """`_compare_logic` answers EQUIVALENT with its "matching text, no
+        parse" note when two unparseable bodies normalise to the same text -- but
         `compare_logic` already returned EQUAL for that case before calling it,
         so through the public API the branch is DEAD.
 

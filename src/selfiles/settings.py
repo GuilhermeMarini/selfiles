@@ -1,20 +1,20 @@
 """
-Parser de arquivos SET_*.TXT (e set_*.txt) extraidos de RDBs do QuickSet.
+Parser for the SET_*.TXT (and set_*.txt) files extracted from a QuickSet RDB.
 
-Layout comum (independente de familia):
+The common layout, whatever the relay family:
 
-    [INFO]                              <- cabecalho; pares KEY=VALUE sem aspas
+    [INFO]                              <- header; KEY=VALUE pairs, unquoted
     RELAYTYPE=SEL-487E-3
     FID=...
-    [<SECTION>]                         <- L1, S1, G1, 1, P5, etc.
-    KEY,"VALUE"                         <- a maioria das linhas
-    KEY,VALUE                           <- ocasionalmente sem aspas (numericos)
+    [<SECTION>]                         <- L1, S1, G1, 1, P5, ...
+    KEY,"VALUE"                         <- most lines
+    KEY,VALUE                           <- occasionally unquoted (numeric)
 
-Este modulo eh deliberadamente *agnostico de familia*. Ele apenas tokeniza
-em linhas estruturadas. A interpretacao de cada linha (latch slot, par
-SET/RST, equacao com `:=`, etc.) fica para `selfiles.selogic.model`.
+This module is deliberately *family-agnostic*. It only tokenises into
+structured lines. What each line MEANS (a latch slot, a SET/RST pair, an
+equation with `:=`) is `selfiles.selogic.model`'s problem, not this one's.
 
-API publica:
+Public API:
 
     parse_settings_file(path) -> ParsedSettings
     parse_relay_settings_dir(relay_dir) -> list[ParsedSettings]
@@ -28,31 +28,32 @@ from collections.abc import Iterator
 from dataclasses import dataclass, field
 from pathlib import Path
 
-# Casa lines como:
+# Matches lines like:
 #   KEY,"VALUE"
 #   KEY,VALUE
 #   KEY,
-# Captura KEY (G1) e VALUE bruto (G2 ou G3). VALUE pode ter aspas, virgulas,
-# pontuacao SELOGIC arbitraria. Linhas em branco/comentario sao filtradas antes.
+# Captures KEY (G1) and the raw VALUE (G2 or G3). A VALUE may contain quotes,
+# commas and arbitrary SELOGIC punctuation. Blank and comment lines are
+# filtered out before this runs.
 _KV_QUOTED_RE = re.compile(r'^\s*([^,\s]+)\s*,\s*"((?:[^"\\]|\\.)*)"\s*$')
 _KV_BARE_RE = re.compile(r'^\s*([^,\s]+)\s*,\s*(.*?)\s*$')
 
-# INFO header: KEY=VALUE sem aspas.
+# INFO header: KEY=VALUE, unquoted.
 _INFO_RE = re.compile(r'^\s*([^=\s]+)\s*=\s*(.*?)\s*$')
 
-# Header de secao: [NAME]
+# Section header: [NAME]
 _SECTION_RE = re.compile(r'^\s*\[\s*([^\]\s]+)\s*\]\s*$')
 
 
 @dataclass(frozen=True)
 class Line:
-    """Uma linha tokenizada de um SET_*.TXT.
+    """One tokenised line of a SET_*.TXT.
 
-    Atributos:
-        key:   nome bruto da chave (ex.: 'PROTSEL1', 'CTRS', 'SET01').
-        value: valor bruto como aparece no arquivo, ja sem as aspas externas
-               (mas com `#`/comentario interno preservado, se houver).
-        lineno: 1-based no arquivo de origem.
+    Attributes:
+        key:   the raw key name (e.g. 'PROTSEL1', 'CTRS', 'SET01').
+        value: the raw value as it appears in the file, with the surrounding
+               quotes already removed (but any inner `#` or comment kept).
+        lineno: 1-based, in the source file.
     """
     key: str
     value: str
@@ -61,15 +62,15 @@ class Line:
 
 @dataclass
 class ParsedSettings:
-    """Conteudo de um SET_*.TXT.
+    """The content of one SET_*.TXT.
 
-    Atributos:
-        path:    caminho absoluto do arquivo na extracao.
-        section: nome da secao principal (ex.: 'L1', 'S1', 'G1', '1', 'PF').
-                 Eh o ultimo header `[...]` antes das linhas de dados. None
-                 se o arquivo so tem o `[INFO]`.
-        info:    pares do `[INFO]` (RELAYTYPE, FID, BFID, PARTNO).
-        lines:   linhas de dados em ordem de leitura. Linhas vazias filtradas.
+    Attributes:
+        path:    absolute path of the file inside the extraction.
+        section: name of the main section (e.g. 'L1', 'S1', 'G1', '1', 'PF').
+                 It is the last `[...]` header before the data lines, and
+                 None when the file carries only the `[INFO]` block.
+        info:    the `[INFO]` pairs (RELAYTYPE, FID, BFID, PARTNO).
+        lines:   data lines in read order. Blank lines are dropped.
     """
     path: Path
     section: str | None
@@ -82,21 +83,21 @@ class ParsedSettings:
 
 
 def _read_text(path: Path) -> str:
-    """Le com latin-1 (tolera qualquer byte) e remove BOM se presente."""
+    """Read as latin-1 (any byte is legal) and strip a BOM if there is one."""
     raw = path.read_bytes()
-    # BOM UTF-8 (raro em RDB mas barato de remover)
+    # A UTF-8 BOM: rare in an RDB, cheap to drop.
     if raw.startswith(b"\xef\xbb\xbf"):
         raw = raw[3:]
     return raw.decode("latin-1", errors="replace")
 
 
 def parse_settings_file(path: Path) -> ParsedSettings:
-    """Tokeniza um SET_*.TXT.
+    """Tokenise one SET_*.TXT.
 
-    Aceita tanto a forma `KEY,"VALUE"` quanto `KEY,VALUE` (sem aspas).
-    Linhas que nao casam com nenhum dos padroes sao silenciosamente ignoradas
-    -- isso eh defensivo: o QuickSet ocasionalmente emite linhas mal-formadas
-    ou comentarios proprietarios, e nao queremos quebrar o tool por isso.
+    Accepts both `KEY,"VALUE"` and `KEY,VALUE` (unquoted). A line matching
+    neither pattern is dropped in silence, and that is defensive on purpose:
+    QuickSet occasionally emits a malformed line or a proprietary comment, and
+    a settings reader has no business failing over one.
     """
     text = _read_text(path)
     result = ParsedSettings(path=path, section=None)
@@ -116,9 +117,9 @@ def parse_settings_file(path: Path) -> ParsedSettings:
                 continue
             in_info = False
             current_section = section_name
-            # A primeira secao "real" e a canonica do arquivo. Algum SET_*.TXT
-            # pode ter `[INFO]` seguido de uma unica secao de dados; outros
-            # tem multiplas (raro). Guardamos a primeira.
+            # The first "real" section is the file's canonical one. Some
+            # SET_*.TXT carry `[INFO]` and then a single data section; a few
+            # carry several (rare). Keep the first.
             if result.section is None:
                 result.section = section_name
             continue
@@ -129,56 +130,58 @@ def parse_settings_file(path: Path) -> ParsedSettings:
                 result.info[mi.group(1)] = mi.group(2)
             continue
 
-        # Linha de dados em uma secao real.
+        # A data line, inside a real section.
         if current_section is None:
-            # Linha solta antes de qualquer secao: ignora.
+            # A stray line before any section: ignore it.
             continue
 
         mq = _KV_QUOTED_RE.match(line)
         if mq:
             key, value = mq.group(1), mq.group(2)
-            # Aspas escapadas dentro do valor: o QuickSet quase nunca produz isso,
-            # mas se aparecer, devolvemos como veio (sem desescapar) para nao
-            # perder informacao.
+            # Escaped quotes inside a value: QuickSet almost never writes
+            # them, but if one shows up it is handed back exactly as it came
+            # (not unescaped), so nothing is lost.
             result.lines.append(Line(key=key, value=value, lineno=lineno))
             continue
 
         mb = _KV_BARE_RE.match(line)
         if mb:
             key, value = mb.group(1), mb.group(2)
-            # Strip aspas residuais de valores tipo `KEY,"x"` que escaparam o
-            # primeiro regex por whitespace estranho.
+            # Strip leftover quotes from values like `KEY,"x"` that escaped
+            # the first regex because of odd whitespace.
             if len(value) >= 2 and value[0] == '"' and value[-1] == '"':
                 value = value[1:-1]
             result.lines.append(Line(key=key, value=value, lineno=lineno))
             continue
 
-        # Nao casou com nada -- ignora (defensivo).
+        # Matched nothing -- ignore it (defensive).
 
     return result
 
 
-# Padroes que caracterizam um arquivo de settings dentro do diretorio do rele.
-# Os 4xx usam `SET_*.TXT` (maiusculo); 3xx/7xx usam `set_*.txt` (minusculo).
-# Ambos terminam em `.TXT` no OLE (case-insensitive no Windows), entao a
-# diferenca aparece apenas apos extracao.
+# What marks a settings file inside a relay's directory. The 4xx write
+# `SET_*.TXT` (uppercase); the 3xx and 7xx write `set_*.txt` (lowercase). Both
+# end up as `.TXT` inside the OLE, which is case-insensitive, so the
+# difference only appears once the files are extracted.
 _SETTINGS_NAME_RE = re.compile(r"^set_[a-z0-9]+\.txt$", re.IGNORECASE)
 
 
 def is_settings_filename(name: str) -> bool:
-    """True se `name` parece um arquivo de settings (SET_*.TXT ou set_*.txt).
+    """True when `name` looks like a settings file (SET_*.TXT or set_*.txt).
 
-    Exclui explicitamente arquivos auxiliares como `BAY_SCREEN.TXT` (que nao
-    tem o prefixo `SET_`) e `SET_HMI.TXT` que algumas familias usam para HMI
-    e nao para settings em si (mas mantemos esse pois eh um setting de fato).
+    Deliberately excludes auxiliary files such as `BAY_SCREEN.TXT`, which has
+    no `SET_` prefix. `SET_HMI.TXT` is kept: some families use it for the HMI
+    rather than for protection settings, but it is a settings file all the
+    same.
     """
     return _SETTINGS_NAME_RE.match(name) is not None
 
 
 def iter_settings_files(relay_dir: Path) -> Iterator[Path]:
-    """Itera sobre os SET_*.TXT do diretorio do rele (top-level apenas).
+    """Iterate the relay directory's SET_*.TXT files (top level only).
 
-    NAO recursa em `Misc/` -- aqueles sao GLE/Cfg/Device, nao settings.
+    Does NOT descend into `Misc/` -- what lives there is GLE, Cfg and Device,
+    not settings.
     """
     if not relay_dir.is_dir():
         return
@@ -188,5 +191,5 @@ def iter_settings_files(relay_dir: Path) -> Iterator[Path]:
 
 
 def parse_relay_settings_dir(relay_dir: Path) -> list[ParsedSettings]:
-    """Parseia todos os SET_*.TXT do rele, em ordem alfabetica do nome."""
+    """Parse every SET_*.TXT of the relay, in alphabetical order of file name."""
     return [parse_settings_file(p) for p in iter_settings_files(relay_dir)]

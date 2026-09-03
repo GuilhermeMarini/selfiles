@@ -1,13 +1,18 @@
 """
-Catalogo de grupos de settings por familia SEL.
+The catalogue of settings groups, per SEL relay family.
 
-Cada familia organiza os SET_*.TXT em "grupos" diferentes. Este modulo expoe:
+Each family organises its SET_*.TXT files into different "groups". This module
+exposes:
 
-  - lista de grupos canonicos por familia (com label PT-BR e prioridade)
-  - resolucao de arquivo -> chave de grupo
-  - dialeto SELOGIC esperado por familia
+  - the canonical group list per family (with a pt-BR label and a priority)
+  - resolution of a file name -> a group key
+  - the SELOGIC dialect each family speaks
 
-A familia eh inferida do RELAYTYPE do `[INFO]` (ver `family_from_relaytype`).
+The family is inferred from the RELAYTYPE in `[INFO]` (see
+`family_from_relaytype`).
+
+The labels stay in Portuguese on purpose: they are shown on screen, and the
+people commissioning these relays read Portuguese.
 """
 
 from __future__ import annotations
@@ -29,9 +34,9 @@ class Group:
     sort_order: int      # ordem nas abas
 
 
-# Os catalogos sao listas ordenadas. O dashboard segue essa ordem.
-# Nomes de arquivo seguem a convencao QuickSet (uppercase no 4xx, lowercase
-# nos 3xx/7xx -- mas a resolucao no codigo eh case-insensitive).
+# The catalogues are ordered lists, and the dashboard follows that order.
+# File names follow the QuickSet convention (uppercase on the 4xx, lowercase
+# on the 3xx and 7xx) -- but resolution here is case-insensitive.
 
 _CAT_4XX: tuple[Group, ...] = (
     Group("S1",  "Grupo 1 (Sistema)",        "SET_S1.TXT",  False, 100),
@@ -159,11 +164,11 @@ _FAMILY_RE = re.compile(r"^(?:SEL-?)?0?([3-9])\d{2}", re.IGNORECASE)
 
 
 def family_from_relaytype(relaytype: str | None) -> Family | None:
-    """Infere a familia (3xx/4xx/7xx) a partir do RELAYTYPE do [INFO].
+    """Infer the family (3xx/4xx/7xx) from the RELAYTYPE in [INFO].
 
-    Retorna None se o RELAYTYPE nao casa com um padrao reconhecido (e.g.,
-    SEL-2414 -- equipamento auxiliar de automacao/comunicacao, nao rele de
-    protecao). O caller usa esse None pra filtrar.
+    Returns None when the RELAYTYPE matches no known pattern -- an SEL-2414,
+    say, which is automation and communications hardware, not a protection
+    relay. Callers use that None to filter.
     """
     if not relaytype:
         return None
@@ -181,7 +186,7 @@ def family_from_relaytype(relaytype: str | None) -> Family | None:
 
 
 def is_relay_device(relaytype: str | None) -> bool:
-    """True se RELAYTYPE indica rele de protecao (3xx/4xx/7xx)."""
+    """True when the RELAYTYPE names a protection relay (3xx/4xx/7xx)."""
     return family_from_relaytype(relaytype) is not None
 
 
@@ -201,7 +206,7 @@ def find_group(family: Family, group_key: str) -> Group | None:
 
 
 def find_group_by_filename(family: Family, filename: str) -> Group | None:
-    """Resolve um nome de arquivo (case-insensitive) para o Group correspondente."""
+    """Resolve a file name (case-insensitively) to its Group."""
     target = filename.lower()
     for g in _CATALOGS[family]:
         if g.file_basename.lower() == target:

@@ -1,29 +1,29 @@
 """
-Cruzamento entre reles de um RDB e IEDs de um SCD.
+Cross-match the relays in an RDB against the IEDs in an SCD.
 
-Pra que serve: durante comissionamento, voce tem um RDB (settings dos reles
-gerados pelo AcSELerator QuickSet) e um SCD (configuracao IEC 61850 vinda
-do Architect). Cada rele do RDB precisa corresponder a um IED do SCD --
-nem sempre o nome bate, entao usamos identificadores unicos.
+What it is for: during commissioning you hold an RDB (the relay settings, out
+of AcSELerator QuickSet) and an SCD (the IEC 61850 configuration, out of
+Architect). Every relay in the RDB has to correspond to an IED in the SCD, and
+the names do not always agree -- so the match is made on unique identifiers.
 
-Chave de match (em ordem de prioridade):
+The match keys, in priority order:
 
-  1. IP address  -- IPADDR no SET_P*.TXT do RDB versus
-                    <ConnectedAP><Address><P type="IP"> do SCD. Chave
-                    primaria, casa quase sempre apos o rele ter recebido
-                    o IP definitivo do projeto.
+  1. IP address  -- IPADDR in the RDB's SET_P*.TXT against
+                    <ConnectedAP><Address><P type="IP"> in the SCD. The
+                    primary key: it matches almost always, once the relay has
+                    been given the project's real address.
 
-  2. RID (Relay ID) -- RID no SET_G*/SET_1.txt do RDB versus IED@name no
-                       SCD. Fallback usado quando o rele ainda nao foi
-                       comissionado (IP factory-default tipo 192.168.x.x)
-                       mas o engenheiro ja preencheu o RID.
+  2. RID (Relay ID) -- RID in the RDB's SET_G*/SET_1.txt against IED@name in
+                       the SCD. The fallback, for a relay not yet commissioned
+                       (still on a factory-default 192.168.x.x) whose RID the
+                       engineer has already filled in.
 
-Os arquivos/keys onde cada identificador mora dependem do modelo do rele
-(4xx usa SET_P5.TXT/SET_G1.TXT, 7xx usa SET_P1.TXT/SET_1.TXT) e ficam
-declarados em `data/relay_models/<MODEL>.json`. Adicionar suporte a
-um modelo novo eh so adicionar o JSON.
+Which file and key each identifier lives in depends on the relay model (a 4xx
+uses SET_P5.TXT/SET_G1.TXT, a 7xx uses SET_P1.TXT/SET_1.TXT), and that is
+declared in the model registry. Supporting a new model is adding a JSON file,
+not editing this one.
 
-API publica:
+Public API:
 
     compare_rdb_to_scd(rdb_path, scd_path) -> MatchReport
     compare_relays_to_scd(relays, extract_dir, scd_path) -> MatchReport
@@ -46,7 +46,7 @@ _logger = logging.getLogger(__name__)
 
 @dataclass(frozen=True)
 class RelayIdentifiers:
-    """Identificadores extraidos de um rele do RDB."""
+    """The identifiers read out of one relay in the RDB."""
     name: str                       # nome da pasta no RDB
     model: str | None            # ex.: "487E-3" do RELAYTYPE
     ip: str | None
@@ -56,7 +56,7 @@ class RelayIdentifiers:
 
 @dataclass(frozen=True)
 class Match:
-    """Match RDB<->SCD com diagnostico de consistencia."""
+    """One RDB<->SCD match, with a consistency verdict attached."""
     rdb_name: str
     scd_name: str
     matched_by: str                 # "ip" | "rid"
@@ -165,12 +165,13 @@ class MatchReport:
 
 
 def _normalize_model(s: str | None) -> str:
-    """`SEL-487E-3` / `SEL_487E_A` / `487E` -> `487E`. Vazio quando None.
+    """`SEL-487E-3` / `SEL_487E_A` / `487E` -> `487E`. Empty when None.
 
-    Tolera os dois separadores que aparecem na pratica: `-` no RELAYTYPE do
-    RDB (`SEL-487E-3`) e `_` no atributo `type` do SCD (`SEL_487E_A`). Tira
-    o prefixo `SEL` e, se sobrou um sufixo curto alfanumerico (revisao tipo
-    `-3` / `_A`), tira tambem -- `487E-3` e `487E_A` ambos viram `487E`.
+    Tolerates both separators that occur in practice: `-` in the RDB's
+    RELAYTYPE (`SEL-487E-3`) and `_` in the SCD's `type` attribute
+    (`SEL_487E_A`). Strips the `SEL` prefix and, if a short alphanumeric
+    suffix is left (a revision such as `-3` or `_A`), strips that too --
+    `487E-3` and `487E_A` both become `487E`.
     """
     if not s:
         return ""
@@ -189,7 +190,7 @@ def _model_consistent(rdb_model: str | None, scd_type: str | None) -> bool:
     a = _normalize_model(rdb_model)
     b = _normalize_model(scd_type)
     if not a or not b:
-        # sem dado de um dos lados, nao da pra contradizer
+        # With nothing on one side, there is nothing to contradict.
         return True
     return a == b
 
@@ -217,10 +218,11 @@ def compare_relays_to_scd(
     extract_dir: str | Path,
     scd_path: str | Path,
 ) -> MatchReport:
-    """Versao que aceita a lista de reles ja-extraidos.
+    """The variant that takes an already-extracted relay list.
 
-    Util quando voce ja tem um `RdbInfo` em maos e nao quer re-extrair.
-    `extract_dir` deve apontar pro diretorio que contem `Relays/<relay>/`.
+    For when an `RdbInfo` is already in hand and re-extracting would be
+    wasteful. `extract_dir` must point at the directory holding
+    `Relays/<relay>/`.
     """
     extract_dir = Path(extract_dir)
     scd_path = Path(scd_path)
@@ -246,17 +248,16 @@ def compare_relays_to_scd(
         matched_by = ""
         notes: list[str] = []
 
-        # 1) match por IP
+        # 1) match by IP
         #
-        # O `used_scd_names` vale aqui tanto quanto no ramo do RID: o
-        # casamento e' um-pra-um, e `unmatched_scd` la embaixo e' montado
-        # partindo desse conjunto. Sem a guarda, dois reles do RDB com o mesmo
-        # IP casavam os dois com o MESMO IED e o relatorio mostrava dois pares
-        # confirmados, escondendo a duplicata em vez de denuncia-la. Pasta de
-        # rele copiada dentro do RDB -- ou um IPADDR que ninguem trocou depois
-        # de clonar os ajustes -- e' o jeito normal de cair nisso, e e'
-        # exatamente o erro de comissionamento que esta ferramenta existe pra
-        # mostrar.
+        # `used_scd_names` matters here as much as in the RID branch: the
+        # match is one-to-one, and `unmatched_scd` further down is built from
+        # that set. Without the guard, two RDB relays sharing an IP both
+        # matched the SAME IED and the report showed two confirmed pairs --
+        # hiding the duplicate instead of reporting it. A relay folder copied
+        # inside the RDB, or an IPADDR nobody changed after cloning the
+        # settings, is the ordinary way to end up there, and it is exactly the
+        # commissioning error this tool exists to surface.
         if r.ip and r.ip in by_ip and by_ip[r.ip].name not in used_scd_names:
             ied = by_ip[r.ip]
             matched_by = "ip"
@@ -333,13 +334,12 @@ def compare_rdb_to_scd(
     scd_path: str | Path,
     base_dir: str | Path | None = None,
 ) -> MatchReport:
-    """Pipeline completo: extrai o RDB (ou reaproveita extracao em cache via
-    sha256) e compara com o SCD.
+    """The whole pipeline: extract the RDB (or reuse a cached extraction, keyed
+    by sha256) and compare it against the SCD.
 
-    A extracao vai pro cache por conteudo (`cache/rdb/<sha256>/`), e nao mais
-    pra um diretorio ao lado do arquivo. `base_dir`, quando dado, vira a RAIZ
-    alternativa desse cache -- util pra rodar isolado fora da web. Aceita
-    strings ou Path.
+    The extraction goes into the content-addressed cache, not into a directory
+    beside the file. `base_dir`, when given, becomes an alternative ROOT for
+    that cache -- useful for running this in isolation. Accepts str or Path.
     """
     rdb_path = Path(rdb_path)
     data = rdb_path.read_bytes()

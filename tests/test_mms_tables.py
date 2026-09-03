@@ -194,22 +194,23 @@ class TestDaVocabulary:
         assert da_rank("SBOw.ctlVal") == da_rank("Oper.ctlVal")
 
 
-# -- os enderecos DECORADOS: um ponto 61850 que carrega dois bits -----------
+# -- the DECORATED addresses: one 61850 point carrying two bits ------------
 #
-# A SEL escreve um DPS (posicao de disjuntor/seccionadora) como UM ponto cujo
-# valor codifica DOIS bits da Relay Word:
+# SEL writes a DPS (a breaker or disconnector position) as ONE point whose
+# value encodes TWO Relay Word bits:
 #
-#     sAddr="db:52A|52B?0:1:2:3"   em BKR1CSWI1$ST$Pos$stVal
+#     sAddr="db:52A|52B?0:1:2:3"   on BKR1CSWI1$ST$Pos$stVal
 #
-# As alternativas sao indexadas pela combinacao dos bits, PRIMEIRO NOME COMO
-# BIT MAIS SIGNIFICATIVO -- (0,0)->0, (0,1)->1, (1,0)->2, (1,1)->3, que e'
-# exatamente o Dbpos da IEC 61850 (intermediate/off/on/bad-state).
+# The alternatives are indexed by the combination of the bits, FIRST NAME AS
+# THE MOST SIGNIFICANT BIT -- (0,0)->0, (0,1)->1, (1,0)->2, (1,1)->3, which is
+# exactly IEC 61850's Dbpos (intermediate/off/on/bad-state).
 #
-# Medido no corpus inteiro (SCD do projeto + os 345 ICD de fabrica), 132.250
-# enderecos `db:`: 4.322 com um nome e 2 alternativas, 703 com dois nomes e 4
-# alternativas, e `len(alternativas) == 2**len(nomes)` em 5.025 de 5.025. Um
-# desvio dessa invariante e' uma forma que ninguem viu -- e chutar nela e'
-# como um disjuntor acaba pintado fechado quando esta aberto.
+# Measured over the whole corpus (the project SCD plus 345 factory ICDs),
+# 132,250 `db:` addresses: 4,322 with one name and 2 alternatives, 703 with
+# two names and 4 alternatives, and `len(alternatives) == 2**len(names)` in
+# 5,025 of 5,025. A departure from that invariant is a shape nobody has seen
+# -- and guessing at one is how a breaker ends up painted closed while it is
+# open.
 
 class TestParseSaddr:
 
@@ -226,8 +227,8 @@ class TestParseSaddr:
         assert spec.alternatives == (0, 1, 2, 3)
 
     def test_a_single_bit_address_can_carry_alternatives_too(self):
-        """`52A?1:2` e' o mesmo Dbpos lido de um contato auxiliar so':
-        aberto=1, fechado=2."""
+        """`52A?1:2` is the same Dbpos read from a single auxiliary contact:
+        open=1, closed=2."""
         from selfiles.scl.mms_tables import parse_saddr
         spec = parse_saddr("db:52A?1:2")
         assert spec.names == ("52A",)
@@ -261,11 +262,12 @@ class TestParseSaddr:
 
 
 class TestDecodeBit:
-    """O valor lido -> 0/1 por bit. Sem isto, `int(bool(valor))`.
+    """The value read -> 0/1 per bit. Without this it would be
+    `int(bool(value))`.
 
-    A py61850 devolve um Dbpos (BIT-STRING de 2 bits) como a STRING "10", e
-    `bool("00")` e' True: deixar um ponto desses entrar no caminho booleano
-    pintaria TODO disjuntor como fechado, sempre.
+    py61850 returns a Dbpos (a 2-bit BIT-STRING) as the STRING "10", and
+    `bool("00")` is True: letting such a point onto the boolean path would
+    paint EVERY breaker closed, always.
     """
 
     def _rule(self, sa, i):
@@ -282,8 +284,8 @@ class TestDecodeBit:
         assert (decode_bit(a, "11"), decode_bit(b, "11")) == (1, 1)  # bad
 
     def test_an_integer_status_matches_its_alternative(self):
-        """`RELAY_EN?5:1` num `Mod$stVal`: 5=off, 1=on. A py61850 devolve um
-        INTEGER como int, nao como string de bits."""
+        """`RELAY_EN?5:1` on a `Mod$stVal`: 5=off, 1=on. py61850 returns an
+        INTEGER as an int, not as a bit string."""
         from selfiles.scl.mms_tables import decode_bit
         r = self._rule("db:RELAY_EN?5:1", 0)
         assert decode_bit(r, 5) == 0
@@ -296,9 +298,9 @@ class TestDecodeBit:
         assert decode_bit(r, "10") == 1      # Dbpos 2, fechado
 
     def test_a_value_matching_no_alternative_is_no_reading_at_all(self):
-        """Um Dbpos 3 (bad-state) contra um ponto `?1:2` nao e' 0 nem 1. O
-        bit tem que sumir do payload e o diagrama pinta-lo indeterminado --
-        a mesma regra do acesso que falha."""
+        """A Dbpos 3 (bad-state) against a `?1:2` point is neither 0 nor 1.
+        The bit has to disappear from the payload and the drawing paints it
+        indeterminate -- the same rule as a failed access."""
         from selfiles.scl.mms_tables import decode_bit
         r = self._rule("db:52A?1:2", 0)
         assert decode_bit(r, "11") is None   # Dbpos 3
@@ -306,8 +308,8 @@ class TestDecodeBit:
         assert decode_bit(r, 7) is None
 
     def test_junk_is_no_reading_and_never_an_exception(self):
-        """O laco de polling nao pode morrer por causa de um valor estranho:
-        mil outros bits dependem da mesma volta."""
+        """The polling loop must not die over one odd value: a thousand other
+        bits depend on the same turn."""
         from selfiles.scl.mms_tables import decode_bit
         r = self._rule("db:52A|52B?0:1:2:3", 0)
         for junk in ("", "abc", None, True, 3.5, b"\x01", {"error": "x"}):
@@ -315,12 +317,12 @@ class TestDecodeBit:
 
 
 class TestDecoratedRank:
-    """Um bit com endereco booleano E endereco decorado fica com o booleano.
+    """A bit with both a boolean and a decorated address keeps the boolean one.
 
-    Medido em `QPC1_LT1_UPC1` do SCD da subestacao: 10 dos 33 nomes decorados
-    tambem tem um `db:NOME` liso. `is_boolean_status("stVal")` e' True nos
-    dois, entao sem um degrau proprio o desempate voltaria a ser ordem de
-    documento.
+    Measured on one IED of the substation SCD: 10 of its 33 decorated names
+    also have a plain `db:NAME`. `is_boolean_status("stVal")` is True for
+    both, so without a step of its own the tie would fall back to document
+    order.
     """
 
     def test_a_decorated_status_ranks_below_a_plain_boolean_one(self):
@@ -341,12 +343,12 @@ class TestDecoratedRank:
 
 
 class TestEnumStatusDas:
-    """Onde os enderecos decorados caem, e o que continua recusado.
+    """Where the decorated addresses land, and what stays refused.
 
-    Medido no corpus: as unicas (DO, DA) que recebem endereco decorado sao
-    `Pos.stVal`, `Dir/Str.dirGeneral` e o `stVal` de
-    Health/Mod/Beh/TrBeh/EEHealth/PhyHealth/ExConSt1 -- e NENHUM endereco
-    liso cai numa delas (0 de 127.225).
+    Measured over the corpus: the only (DO, DA) pairs that carry a decorated
+    address are `Pos.stVal`, `Dir/Str.dirGeneral` and the `stVal` of
+    Health/Mod/Beh/TrBeh/EEHealth/PhyHealth/ExConSt1 -- and NO plain address
+    lands on one of them (0 of 127,225).
     """
 
     def test_dirgeneral_is_readable_only_with_a_rule(self):
@@ -355,9 +357,9 @@ class TestEnumStatusDas:
         assert not is_boolean_status("dirGeneral")
 
     def test_stval_is_both_because_the_do_decides_not_the_da(self):
-        """`stVal` e' o DA de um SPS booleano E o de um DPS/INS enumerado. E'
-        a decoracao que separa os dois, nao o nome do DA -- por isso o portao
-        em `resolve_map` exige a regra, e nao so' o nome."""
+        """`stVal` is the DA of a boolean SPS AND of an enumerated DPS/INS.
+        The decoration separates them, not the DA's name -- which is why the
+        gate demands the rule and not just the name."""
         from selfiles.scl.mms_tables import is_boolean_status, is_enum_status
         assert is_enum_status("stVal") and is_boolean_status("stVal")
 
@@ -367,17 +369,16 @@ class TestEnumStatusDas:
             assert not is_enum_status(da), da
 
 
-# -- a metade DECORADA da tabela de fabrica ---------------------------------
+# -- the DECORATED half of the factory table --------------------------------
 #
-# `wordbits.json` -- a fonte das linhas lisas -- e' gerado por OUTRO projeto,
-# cuja varredura de `sAddr` derruba a forma decorada do mesmo jeito que esta
-# derrubava. Corrigir o parser deste repositorio nao alcanca aquele arquivo,
-# entao o gerador le' os ICD DIRETAMENTE pra essa metade. `wordbits.json`
-# continua intocado, e as linhas lisas saem identicas.
+# `wordbits.json` -- where the plain rows come from -- is generated by ANOTHER
+# project, whose own `sAddr` walk drops the decorated form exactly as this one
+# used to. Fixing the parser in this repository does not reach that file, so
+# the generator reads the ICDs DIRECTLY for this half. `wordbits.json` is left
+# untouched, and the plain rows come out identical.
 #
-# O ICD nao esta no git (231 MB de arquivos de fabrica, e `fixtures/ICD files/`
-# esta no .gitignore), entao o teste usa o mesmo SCL de fixture do parser --
-# um ICD e' SCL como qualquer outro.
+# The ICDs are not in git (231 MB of manufacturer files), so this test uses the
+# parser's own SCL fixture -- an ICD is SCL like any other.
 
 FIXTURE_SCL = Path(__file__).parent / "fixtures" / "saddr_min.scd"
 
@@ -391,14 +392,14 @@ class TestDecoratedTableRows:
         assert rows["52B"] == ["ANN", "BKR1CSWI1$ST$Pos$stVal", [[0, 1, 2, 3], 1, 2]]
 
     def test_the_fc_comes_from_the_templates_and_not_from_a_constant(self):
-        """Os 2.030 enderecos decorados dos 146 ICD do corpus sao todos `ST`,
-        mas quem diz isso e' o `DataTypeTemplates` do arquivo."""
+        """All 2,030 decorated addresses across the corpus's 146 ICDs are `ST`,
+        but what says so is the file's own `DataTypeTemplates`."""
         gen = _load_generator()
         assert gen.decorated_rows(FIXTURE_SCL)["52A"][1].split("$")[1] == "ST"
 
     def test_a_plain_address_is_not_a_decorated_row(self):
-        """As linhas lisas continuam vindo do `wordbits.json`; esta passagem
-        so' acrescenta o que aquela fonte nao tem."""
+        """The plain rows still come from `wordbits.json`; this pass only adds
+        what that source does not carry."""
         gen = _load_generator()
         assert "PLT01" not in gen.decorated_rows(FIXTURE_SCL)
 
@@ -407,9 +408,9 @@ class TestDecoratedTableRows:
         assert "BADFORM" not in gen.decorated_rows(FIXTURE_SCL)
 
     def test_a_plain_row_already_in_the_table_is_never_overwritten(self):
-        """`LOC` tem endereco liso E decorado. O liso ganha, aqui como no
-        SCD -- e as linhas ja publicadas nao podem mudar de item por causa
-        desta passagem."""
+        """`LOC` has both a plain and a decorated address. The plain one wins,
+        here as in the SCD -- and rows already published must not change their
+        item because of this pass."""
         gen = _load_generator()
         plain = {"LOC": ["ANN", "LLN0$ST$Loc$stVal"]}
         merged = gen.merge_decorated(plain, gen.decorated_rows(FIXTURE_SCL))

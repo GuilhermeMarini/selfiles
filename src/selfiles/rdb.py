@@ -1,7 +1,7 @@
 """
-Leitura/extracao de arquivos RDB (AcSELerator QuickSet) usando olefile.
+Read and extract an RDB (AcSELerator QuickSet), using olefile.
 
-Um RDB e um OLE compound document com a estrutura:
+An RDB is an OLE compound document with this structure:
 
     Relays/
         <relay name>/
@@ -10,14 +10,13 @@ Um RDB e um OLE compound document com a estrutura:
                 Cfg.txt, Device.txt, ...
             SET_*.TXT, BAY_SCREEN.TXT, ...
 
-Este modulo recebe o conteudo bruto de um RDB enviado pelo usuario e extrai
-todos os streams preservando a hierarquia, listando os reles com seus arquivos
-GLE.
+This module takes the raw bytes of an RDB, extracts every stream preserving
+the hierarchy, and lists the relays with their GLE files.
 
-A extracao mora num cache chaveado pelo CONTEUDO (`cache/rdb/<sha256>/`, ver
-`selfiles.rdb_cache`), e nao mais num diretorio por ferramenta chaveado
-pelo nome. Dois arquivos iguais sao o mesmo arquivo: colisao por nome deixou de
-existir, e o reaproveitamento vale entre sessoes e entre reinicios.
+The extraction lives in a cache keyed by CONTENT (see `selfiles.rdb_cache`),
+not in a per-tool directory keyed by name. Two identical files are the same
+file: name collisions stopped existing, and the extraction is reused across
+sessions and across restarts.
 """
 
 from __future__ import annotations
@@ -36,15 +35,15 @@ import olefile
 from selfiles import _paths, rdb_cache
 from selfiles.models import relay_models
 
-# Permite letras/digitos/ponto/hifen/underscore/espaco em nomes que viram
-# caminhos de filesystem. Tudo o resto vira "_".
+# Letters, digits, dot, hyphen, underscore and space survive in a name that
+# becomes a filesystem path. Everything else becomes "_".
 _UNSAFE_CHARS = re.compile(r"[^A-Za-z0-9._\- ]")
 
 
-# Fallback por familia, usado SO quando nao ha JSON em `relay_models/` pro
-# modelo especifico. A fonte de verdade eh `data/relay_models/<MODEL>.json`
-# (campo ip_address.file). Aqui ficam defaults conservadores baseados em onde
-# o IPADDR costuma aparecer pra cada familia SEL.
+# A per-family fallback, used ONLY when the model registry has no entry for
+# the specific model. The source of truth is the model's own JSON
+# (`ip_address.file`); what is here are conservative defaults based on where
+# IPADDR usually appears for each SEL family.
 RELAY_FAMILY_IP_FILE: dict[str, str] = {
     "3xx": "set_p5.txt",
     "4xx": "set_p5.txt",   # SEL-411L, SEL-487E, etc.
@@ -53,7 +52,8 @@ RELAY_FAMILY_IP_FILE: dict[str, str] = {
 
 _RELAYTYPE_RE = re.compile(r"RELAYTYPE\s*=\s*(.+)", re.IGNORECASE)
 _MODEL_RE = re.compile(r"SEL-?\s*([0-9][0-9A-Za-z\-]*)", re.IGNORECASE)
-# Casa "IPADDR,..." mas NAO "IPADDRE,...". Captura o IPv4 (sem mascara CIDR).
+# Matches "IPADDR,..." but NOT "IPADDRE,...". Captures the IPv4, without any
+# CIDR suffix.
 _IPADDR_RE = re.compile(
     r'^\s*IPADDR\s*,\s*"?(\d{1,3}(?:\.\d{1,3}){3})',
     re.IGNORECASE | re.MULTILINE,
@@ -77,7 +77,7 @@ def _read_relay_model(relay_dir: Path) -> str | None:
 
 
 def _family_from_model(model: str | None) -> str | None:
-    """487E -> '4xx', 751 -> '7xx'. Retorna None se nao for digito reconhecido."""
+    """487E -> '4xx', 751 -> '7xx'. None when the leading character is not a digit."""
     if not model:
         return None
     first = model.lstrip().lstrip("-")[:1]
@@ -95,8 +95,8 @@ def _find_case_insensitive(directory: Path, filename: str) -> Path | None:
 
 
 def _resolve_ip_file(model: str | None) -> tuple[str | None, str | None]:
-    """Resolve (filename, key) pra achar o IPADDR. Prioriza JSON do modelo;
-    cai pra fallback por familia se nao houver."""
+    """Resolve the (filename, key) that holds the IPADDR. The model's own entry
+    wins; the per-family fallback is used only when there is none."""
     rm = relay_models.lookup(model or "")
     if rm is not None and rm.ip_address_file:
         return rm.ip_address_file, (rm.ip_address_key or "IPADDR")
@@ -140,27 +140,28 @@ def sha256_bytes(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
-#: Leitura de upload em pedacos. 1 MB e' grande o bastante pra que o custo por
-#: chamada suma num arquivo de 140 MB e pequeno o bastante pra caber folgado na
-#: memoria de um notebook de campo com varios uploads ao mesmo tempo.
+#: Upload read size. 1 MB is large enough that the per-call cost disappears
+#: in a 140 MB file, and small enough to sit comfortably in the memory of a
+#: field laptop handling several uploads at once.
 UPLOAD_CHUNK = 1 << 20
 
 
 def stream_to_file(source, length: int, dest: Path,
                    on_progress=None, chunk_size: int = UPLOAD_CHUNK) -> str:
-    """Copia `length` bytes de `source` pra `dest` e devolve o sha256.
+    """Copy `length` bytes from `source` into `dest` and return the sha256.
 
-    Um RDB tem de 40 a 140 MB e o teto e' 500. Lendo tudo de uma vez, esse
-    tamanho inteiro ficava residente -- duas vezes, na verdade, porque o hash
-    percorria os mesmos bytes e a gravacao passava por eles de novo. Aqui a
-    memoria e' um pedaco de cada vez, o hash cresce junto com a leitura e o
-    arquivo ja vai pro disco: as tres passadas viraram uma.
+    An RDB runs 40 to 140 MB and the ceiling is 500. Read all at once, that
+    whole size stayed resident -- twice over, in fact, because the hash walked
+    the same bytes and writing walked them again. Here memory holds one chunk
+    at a time, the hash grows as the read proceeds and the file goes straight
+    to disk: three passes became one.
 
-    Le exatamente `length` bytes -- um `read(n)` de socket pode voltar curto,
-    entao o laco insiste. Levanta `ValueError` se a origem acabar antes.
+    Reads exactly `length` bytes -- a socket `read(n)` may come back short, so
+    the loop insists. Raises `ValueError` if the source runs out first.
 
-    `on_progress(lidos, total, etapa)` sai a cada pedaco, entao a barra do
-    cliente anda durante o recebimento em vez de congelar em "processando".
+    `on_progress(read, total, stage)` fires on every chunk, so a client's
+    progress bar moves during the transfer instead of freezing on
+    "processing".
     """
     if length <= 0:
         raise ValueError("arquivo vazio")
@@ -226,19 +227,19 @@ class RdbInfo:
     sha256: str
     reused: bool                 # True se nao foi necessario re-escrever/extrair
     relays: list[RelayEntry]
-    # Nome que o usuario subiu, e nao o do cache: guardando por hash, o arquivo
-    # em disco e' o mesmo pra todo mundo, e sem isto todas as telas mostrariam
-    # o nome de quem subiu primeiro.
+    # The name THIS upload carried, not the cache's: stored by hash, the file
+    # on disk is the same for everyone, and without this every screen would
+    # show the name of whoever uploaded it first.
     display_name: str = ""
 
 
 def _extract_and_collect(rdb_path: Path, target_dir: Path,
                          on_progress=None) -> list[RelayEntry]:
-    """Extrai todos os streams para `target_dir` e retorna a lista de reles.
+    """Extract every stream into `target_dir` and return the relay list.
 
-    `on_progress(feitos, total, etapa)` e' chamado durante a extracao. Um RDB
-    real tem milhares de streams e leva alguns segundos; sem isso a barra de
-    progresso do cliente ficaria parada em "processando" ate o fim.
+    `on_progress(done, total, stage)` is called throughout. A real RDB holds
+    thousands of streams and takes several seconds; without this a client's
+    progress bar would sit on "processing" until the end.
     """
     if target_dir.exists():
         shutil.rmtree(target_dir)
@@ -250,8 +251,8 @@ def _extract_and_collect(rdb_path: Path, target_dir: Path,
     try:
         entries = ole.listdir(streams=True, storages=False)
         total = len(entries) or 1
-        # Reportar a cada stream seria dominado pelo custo do callback; de 64
-        # em 64 ja da uma barra suave.
+        # Reporting on every stream would be dominated by the callback's own
+        # cost; one in 64 already gives a smooth bar.
         step = max(1, total // 64)
         for i, entry in enumerate(entries):
             if on_progress is not None and (i % step == 0):
@@ -261,7 +262,7 @@ def _extract_and_collect(rdb_path: Path, target_dir: Path,
             with ole.openstream(entry) as stream:
                 out_path.write_bytes(stream.read())
 
-            # GLE em Relays/<relay>/Misc/<arquivo>.gle
+            # A GLE, at Relays/<relay>/Misc/<file>.gle
             if (len(entry) == 4
                     and entry[0] == "Relays"
                     and entry[2] == "Misc"
@@ -294,7 +295,7 @@ def _extract_and_collect(rdb_path: Path, target_dir: Path,
 
 
 def _scan_existing(extract_dir: Path) -> list[RelayEntry]:
-    """Escaneia uma extracao existente para descobrir reles e GLEs."""
+    """Scan an existing extraction to find its relays and their GLE files."""
     relays_dir = extract_dir / "Relays"
     out: list[RelayEntry] = []
     if not relays_dir.is_dir():
@@ -332,18 +333,18 @@ def _safe_rdb_name(filename: str) -> str:
 def process_upload_stream(source, length: int, filename: str,
                           cache_root: Path | None = None,
                           on_progress=None) -> RdbInfo:
-    """`process_upload`, lendo de um stream em vez de um `bytes` na memoria.
+    """`process_upload`, reading from a stream instead of a `bytes` in memory.
 
-    Mesmo contrato e mesmo cache por conteudo; a diferenca e' que os 40-140 MB
-    do RDB nunca ficam residentes. `source` e' qualquer objeto com `.read(n)`
-    -- na web e' o `rfile` da requisicao.
+    Same contract and same content-addressed cache; the difference is that the
+    RDB's 40-140 MB never stay resident. `source` is any object with
+    `.read(n)` -- over HTTP it is the request's `rfile`.
 
-    A ordem muda por causa disso: o sha256 so existe DEPOIS de ler tudo, entao
-    o arquivo vai primeiro pra um temporario ao lado do cache e so entao
-    descobrimos se aquele conteudo ja estava extraido. Se estava, o temporario
-    e' descartado; se nao, ele e' movido pro lugar com `os.replace` -- mesmo
-    sistema de arquivos, entao a troca e' atomica e nunca existe um
-    `source.rdb` pela metade pra outra sessao encontrar.
+    That changes the order of things: the sha256 only exists AFTER everything
+    has been read, so the file goes first into a temporary beside the cache,
+    and only then do we learn whether that content was already extracted. If
+    it was, the temporary is discarded; if not, it is moved into place with
+    `os.replace` -- same filesystem, so the swap is atomic and a half-written
+    source file never exists for another session to find.
     """
     def _report(done, total, stage):
         if on_progress is not None:
@@ -365,15 +366,17 @@ def process_upload_stream(source, length: int, filename: str,
                              on_progress=on_progress)
         entry = rdb_cache.entry_for(sha, root=cache_root)
 
-        # A trava e' por hash: dois visitantes subindo o mesmo arquivo ao mesmo
-        # tempo extraiam por cima um do outro. O segundo espera e reaproveita.
+        # The lock is per hash: two callers uploading the same file at the
+        # same time used to extract over each other. The second waits and
+        # reuses the result.
         with rdb_cache.lock_for(sha):
             relays: list[RelayEntry] = []
             reused = False
             if entry.complete:
                 _report(0, 1, "Reaproveitando extracao existente")
                 relays = _scan_existing(entry.extract_dir)
-                # Edge case: extracao prevista existe mas esta vazia/incompleta
+                # Edge case: the expected extraction exists but is empty or
+                # incomplete.
                 reused = bool(relays)
             if not reused:
                 _report(0, 1, "Gravando RDB em disco")
@@ -404,25 +407,25 @@ def process_upload_stream(source, length: int, filename: str,
 
 def process_upload(data: bytes, filename: str, cache_root: Path | None = None,
                    on_progress=None) -> RdbInfo:
-    """Extrai o RDB no cache por conteudo e devolve o que ele contem.
+    """Extract the RDB into the content-addressed cache and report what it holds.
 
-    O arquivo vai pra `cache/rdb/<sha256>/source.rdb` e a extracao pra
-    `.../extracted/`. Dois uploads do mesmo conteudo -- do mesmo usuario ou de
-    outro, hoje ou depois de um restart -- reaproveitam a mesma extracao.
-    `cache_root` troca a raiz do cache (uso fora da web); None usa
-    o diretorio de cache configurado (`selfiles.configure`).
+    The file goes to `<cache>/<sha256>/source.rdb` and the extraction to
+    `.../extracted/`. Two uploads of the same content -- by the same caller or
+    another, today or after a restart -- reuse the same extraction.
+    `cache_root` overrides the cache root; None uses whatever
+    `selfiles.configure` was given.
 
-    `display_name` sai do nome que ESTE upload trouxe, e nao do cache: senao
-    todo mundo veria na tela o nome de quem subiu primeiro.
+    `display_name` comes from the name THIS upload carried, not from the
+    cache, or everyone would see the name of whoever uploaded it first.
 
-    `on_progress(feitos, total, etapa)` alimenta a barra de progresso do
-    cliente durante as fases lentas (hash, gravacao e extracao).
+    `on_progress(done, total, stage)` feeds a client's progress bar through
+    the slow phases (hashing, writing and extracting).
 
-    Recebe os bytes prontos. Quem tem um stream -- o upload da web -- deve usar
-    `process_upload_stream`, que nao carrega o arquivo inteiro na memoria. Esta
-    aqui continua porque varios chamadores JA tem os bytes em maos
-    (`derived.adopt` depois de uma exportacao, os matchers, os testes), e pra
-    esses um BytesIO e' o caminho honesto.
+    This takes the bytes ready in hand. A caller holding a stream -- an HTTP
+    upload -- should use `process_upload_stream`, which never loads the whole
+    file. This one stays because several callers ALREADY have the bytes (an
+    export's output, the matchers, the tests), and for those a BytesIO is the
+    honest path.
     """
     if not data:
         raise ValueError("arquivo RDB vazio")
@@ -443,7 +446,7 @@ def find_gle(info: RdbInfo, relay_name: str, gle_name: str) -> GleEntry | None:
 
 
 def relays_to_dict(relays: list[RelayEntry]) -> list[dict]:
-    """Serializa a lista de reles para JSON (consumo pelo frontend)."""
+    """Serialise the relay list for JSON (what a front end consumes)."""
     return [
         {
             "name": r.name,

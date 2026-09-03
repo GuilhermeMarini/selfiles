@@ -272,9 +272,9 @@ def _load_all() -> dict[str, WordbitSet]:
             wbs, aliases = loaded
             for alias in aliases:
                 for key in _key_variants(alias):
-                    # Overlay do host primeiro: `setdefault` ja' era a regra
-                    # dentro de um diretorio, e com dois e' o que faz o arquivo
-                    # fornecido pelo usuario vencer o empacotado.
+                    # Host overlay first: `setdefault` was already the rule
+                    # within one directory, and with two it is what makes a
+                    # user-supplied file win over the packaged one.
                     index.setdefault(key, wbs)
     return index
 

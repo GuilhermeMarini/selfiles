@@ -1,25 +1,25 @@
 """
-Comparador de valores SELOGIC com 4 veredictos:
+Compare two SELOGIC values, with four possible verdicts:
 
-  1. EQUAL                       -- mesma string apos strip de whitespace e
-                                    comentarios identicos
-  2. EQUAL_LOGIC_DIFF_COMMENT    -- corpo identico, comentarios diferentes
-                                    (somente 4xx/7xx; 3xx nao tem `#`)
-  3. EQUIVALENT                  -- mesma funcao booleana, sintaxe diferente
-                                    (catch via AST canonicalizado e/ou tabela
-                                    verdade ate 16 atomos)
-  4. DIFFERENT                   -- avaliacao diferente em pelo menos um
-                                    estado, OU > 16 atomos sem match
-                                    canonical (com nota "nao verificado
-                                    exaustivamente")
+  1. EQUAL                       -- the same string once whitespace is
+                                    stripped, comments included
+  2. EQUAL_LOGIC_DIFF_COMMENT    -- identical body, different comments (4xx
+                                    and 7xx only; the 3xx have no `#`)
+  3. EQUIVALENT                  -- the same boolean function written
+                                    differently (caught by the canonicalised
+                                    AST and/or a truth table, up to 16 atoms)
+  4. DIFFERENT                   -- they evaluate differently in at least one
+                                    state, OR there are more than 16 atoms and
+                                    no canonical match (noted as "not
+                                    exhaustively verified")
 
-Para valores nao booleanos:
-  - kind="number"   : parse como float, comparacao com tolerancia
-  - kind="enum"     : igualdade de string trimada (case sensitive: 'Y' != 'y')
-  - kind="string"   : igualdade de string trimada
+For values that are not boolean:
+  - kind="number"   : parsed as a float and compared with a tolerance
+  - kind="enum"     : trimmed string equality (case sensitive: 'Y' != 'y')
+  - kind="string"   : trimmed string equality
 
-A API recebe os RAW values direto do parser de SET_*.TXT (o comentario interno
-`# ...`, se houver, ainda esta no valor; este modulo cuida do strip).
+The API takes the RAW values straight from the SET_*.TXT parser -- an inline
+`# ...` comment is still in the value, and stripping it is this module's job.
 """
 
 from __future__ import annotations
@@ -46,14 +46,15 @@ class CompareResult:
     note: str | None = None
 
 
-# Threshold para fallback de tabela verdade. Acima disso, a explosao binaria
-# (2^N) fica cara: 2^16 = 65k linhas, 2^20 = 1M. Mantemos em 16 para teto
-# pratico; equacoes SELOGIC reais raramente passam de ~10 atomos distintos.
+# Where the truth-table fallback gives up. Beyond this the binary explosion
+# (2^N) gets expensive: 2^16 is 65k rows, 2^20 is a million. 16 is the
+# practical ceiling; real SELOGIC equations rarely reach ~10 distinct atoms.
 _MAX_TRUTH_ATOMS = 16
 
 
 def _split_logic_and_comment(raw: str) -> tuple[str, str]:
-    """Retorna (corpo, comentario) -- ambos trim. Comentario sem o `#`."""
+    """Returns (body, comment), both trimmed. The comment comes back without its
+    leading `#`."""
     h = raw.find("#")
     if h < 0:
         return raw.strip(), ""
@@ -69,8 +70,9 @@ def _compare_logic(
     b_body: str,
     dialect: sp.Dialect,
 ) -> CompareResult:
-    """Compara dois corpos *sem comentario*. Aplica a cascata canonical +
-    tabela verdade. Retorna EQUIVALENT/DIFFERENT (nunca EQUAL aqui)."""
+    """Compare two bodies with their comments already removed. Runs the
+    canonical-form then truth-table cascade. Returns EQUIVALENT or DIFFERENT,
+    never EQUAL -- that verdict is decided by the caller."""
     try:
         ast_a = sp.parse(a_body, dialect)
         ast_b = sp.parse(b_body, dialect)
@@ -109,7 +111,7 @@ def compare_logic(
     b_raw: str,
     dialect: sp.Dialect,
 ) -> CompareResult:
-    """Compara duas equacoes SELOGIC do mesmo dialeto. 4 veredictos possiveis."""
+    """Compare two SELOGIC equations of the same dialect. Four verdicts."""
     a_body, a_comment = _split_logic_and_comment(a_raw)
     b_body, b_comment = _split_logic_and_comment(b_raw)
 
@@ -138,7 +140,7 @@ def compare_number(
     rel_tol: float = 1e-6,
     abs_tol: float = 1e-6,
 ) -> CompareResult:
-    """Compara dois numeros tolerando formatacao (0 vs 0.000000) e ruido FP."""
+    """Compare two numbers, tolerating formatting (0 vs 0.000000) and float noise."""
     a_str = a_raw.strip()
     b_str = b_raw.strip()
     if a_str == b_str:
@@ -146,7 +148,7 @@ def compare_number(
     fa = _try_float(a_str)
     fb = _try_float(b_str)
     if fa is None or fb is None:
-        # Pelo menos um nao eh numero -- caia pra comparacao string.
+        # At least one is not a number -- fall back to comparing strings.
         return CompareResult("DIFFERENT")
     diff = abs(fa - fb)
     if diff <= max(abs_tol, rel_tol * max(abs(fa), abs(fb))):
@@ -165,23 +167,24 @@ def compare_string(a_raw: str, b_raw: str) -> CompareResult:
 
 
 def _parse_set_list(raw: str) -> set[str]:
-    """Listas SER no QuickSet sao CSV simples. ALIAS sao space-separated."""
+    """QuickSet writes SER lists as plain CSV; ALIAS lists are space-separated."""
     # Aceita virgulas, espacos, tabs e ponto-e-virgula como delimitadores.
     import re
     return {t for t in re.split(r"[,\s;]+", raw.strip()) if t}
 
 
 def compare_set_list(a_raw: str, b_raw: str) -> CompareResult:
-    """Compara duas listas como conjuntos: ordem e duplicatas ignoradas.
+    """Compare two lists as sets: order and duplicates are ignored.
 
-    Usado pelas listas SER (Sequence of Events Recorder) e similares onde o
-    rele registra um *conjunto* de wordbits e a posicao no arquivo nao tem
-    semantica.
+    Used for the SER (Sequence of Events Recorder) lists and their like, where
+    the relay records a *set* of word bits and the position in the file
+    carries no meaning.
 
-    Veredicto:
-      - EQUAL              : se o texto bruto eh identico
-      - EQUIVALENT         : conjuntos iguais mas texto reordenado
-      - DIFFERENT          : conjuntos diferentes (nota lista o que sobra/falta)
+    Verdicts:
+      - EQUAL              : the raw text is identical
+      - EQUIVALENT         : same set, text reordered
+      - DIFFERENT          : different sets (the note names what is extra and
+                             what is missing)
     """
     a_text = " ".join(a_raw.split())
     b_text = " ".join(b_raw.split())
@@ -210,8 +213,8 @@ def compare(
     kind: Kind,
     dialect: sp.Dialect = "keyword",
 ) -> CompareResult:
-    """Dispatcher principal. `kind` decide o caminho (logic/number/enum/string).
-    `dialect` so importa para `kind="logic"`."""
+    """The main dispatcher. `kind` picks the path (logic/number/enum/string);
+    `dialect` only matters for `kind="logic"`."""
     if kind == "logic":
         return compare_logic(a_raw, b_raw, dialect)
     if kind == "number":
@@ -231,12 +234,12 @@ def compare_n(
     kind: Kind,
     dialect: sp.Dialect = "keyword",
 ) -> tuple[Verdict, str | None]:
-    """Compara N >= 2 valores. Veredicto global eh o "pior" entre todos os
-    pares (a ordem de severidade eh EQUAL < EQUAL_LOGIC_DIFF_COMMENT <
-    EQUIVALENT < DIFFERENT).
+    """Compare N >= 2 values. The overall verdict is the WORST across every
+    pair (severity runs EQUAL < EQUAL_LOGIC_DIFF_COMMENT < EQUIVALENT <
+    DIFFERENT).
 
-    Notas dos pares sao agregadas (primeira nao-vazia ganha) -- isso eh
-    suficiente para o UI rotular o estado mais agressivo entre os reles.
+    Per-pair notes are aggregated, first non-empty winning -- enough for the
+    UI to label the most severe disagreement among the relays.
     """
     if len(values) < 2:
         return ("EQUAL", None)

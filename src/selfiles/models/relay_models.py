@@ -1,20 +1,19 @@
 """
-Loader de configuracoes por modelo de rele.
+Loader for the per-relay-model profiles.
 
-Cada arquivo `data/relay_models/<MODELO>.json` descreve um modelo de rele
-(SEL-411L, SEL-751, etc.) e contem:
+Each `relay_models/<MODEL>.json` describes one relay model (SEL-411L,
+SEL-751, ...) and carries:
 
-  - O caminho relativo do arquivo SET_P*.TXT onde o IPADDR aparece (e a chave
-    a procurar nesse arquivo).
-  - Um catalogo de blocos do GLE: para cada tipo, o template de bit derivado
-    da porta de saida (ex.: PCNDTIMER -> "PCT{instance:02d}Q"), o mapeamento
-    pro tipo real no XML do GLE (ex.: PCNDTIMER -> TIMER), e metadados de
-    layout/avaliacao usados pelo renderer.
+  - which SET_P*.TXT holds the IPADDR, and the key to look for in it.
+  - a catalogue of GLE blocks: per type, the template for the bit derived from
+    the output port (PCNDTIMER -> "PCT{instance:02d}Q"), the mapping to the
+    real type in the GLE's XML (PCNDTIMER -> TIMER), and the layout and
+    evaluation metadata the renderer uses.
 
-API publica:
+Public API:
 
-    load_relay_models() -> dict[str, RelayModel]      (chave = MODEL upper)
-    lookup(relaytype: str) -> RelayModel | None       (RELAYTYPE do Cfg.txt)
+    load_relay_models() -> dict[str, RelayModel]      (key = MODEL, upper)
+    lookup(relaytype: str) -> RelayModel | None       (RELAYTYPE from Cfg.txt)
     RelayModel.ip_address_file -> str | None
     RelayModel.derived_bit_for(xml_type, instance_no, name) -> str | None
 """
@@ -32,28 +31,29 @@ from selfiles import _paths
 _logger = logging.getLogger(__name__)
 
 
-# Sentinela do output_bit_pattern: o bit eh o proprio physical_instance_name
-# do elemento (apos strip de underscore inicial). Casos: SYMBOL, AND, OR, ...
+# The output_bit_pattern sentinel: the bit IS the element's own
+# physical_instance_name, once a leading underscore is stripped. That covers
+# SYMBOL, AND, OR and friends.
 PATTERN_IDENTITY = "IDENTITY"
 
 
 @dataclass(frozen=True)
 class AnalogAliasRule:
-    """Regra de aliasing de nome de canal analogico.
+    """An aliasing rule for an analogue channel's name.
 
-    Alguns reles (ex.: SEL-487E) chamam o mesmo canal de jeitos diferentes na
-    Relay Word / GLE versus no Fast Meter: IAS (S = winding 1) na Relay Word
-    vira IA1 no Fast Meter. A regra eh aplicada via `regex.fullmatch` sobre
-    o nome do SYMBOL no GLE (uppercase); se casa, `template.format(...)` gera
-    o nome correspondente no Fast Meter.
+    Some relays (the SEL-487E, for one) call the same channel different things
+    in the Relay Word and the GLE than in Fast Meter: IAS (S = winding 1) in
+    the Relay Word is IA1 in Fast Meter. The rule is applied with
+    `regex.fullmatch` against the GLE SYMBOL's name, uppercased; on a match,
+    `template.format(...)` produces the Fast Meter name.
 
-    Argumentos disponiveis no template:
-      - posicionais: {0} = match inteiro, {1..N} = grupos do regex (1-based
-        igual a regex), na mesma ordem que `m.groups()`.
-      - keyword `winding`: a letra do enrolamento (group 2 do regex) mapeada
-        via `winding_map` (ex.: S -> "1"). Se group 2 nao existe ou nao casa
-        com nenhuma chave, vale a letra original.
-      - kwargs adicionais: grupos nomeados do regex (`(?P<x>...)`).
+    What the template can use:
+      - positionally: {0} is the whole match, {1..N} the regex groups (1-based,
+        as in the regex), in the order of `m.groups()`.
+      - the `winding` keyword: the winding letter (group 2 of the regex),
+        mapped through `winding_map` (S -> "1"). If group 2 does not exist, or
+        matches no key, the original letter is used.
+      - any named groups of the regex (`(?P<x>...)`), as further keywords.
     """
     regex: re.Pattern
     template: str
@@ -86,52 +86,51 @@ class AnalogAliasRule:
 
 @dataclass(frozen=True)
 class AnalogGroup:
-    """Familia de SYMBOLs analogicos (ex.: AMV, PMV, MV, MAG).
+    """A family of analogue SYMBOLs (AMV, PMV, MV, MAG, ...).
 
-    Reune SYMBOLs cujo physical_instance_name representa uma MEDIDA do rele
-    (continuo) -- nao um bit da Relay Word. O dashboard renderiza esses blocos
-    com aparencia distinta e mostra o valor inline a partir de
-    fm_data['analogs'][NAME].
+    Groups the SYMBOLs whose physical_instance_name names a MEASUREMENT the
+    relay makes -- a continuous quantity, not a Relay Word bit. A viewer draws
+    these blocks differently and shows the value inline.
 
-    `patterns` sao regex compiladas (re.Pattern) prontas para .fullmatch();
-    o JSON guarda strings.
+    `patterns` are compiled regexes ready for `.fullmatch()`; the JSON holds
+    them as strings.
     """
-    key: str               # chave canonica curta ("AMV", "MAG", "MV"...)
+    key: str               # short canonical key ("AMV", "MAG", "MV", ...)
     label: str             # label exibido no painel ("Analog Math Variables")
     patterns: tuple        # tuple[re.Pattern, ...]
 
 
 @dataclass(frozen=True)
 class BlockDef:
-    """Definicao por tipo de bloco. Apenas os campos consumidos hoje sao tipados;
-    o restante do JSON (geometry, css_class, etc.) fica em `extra` pra leitura
-    informacional ou refactor futuro."""
+    """One block type's definition. Only the fields consumed today are typed; the
+    rest of the JSON (geometry, css_class and so on) sits in `extra`, for
+    reading and for a future refactor that drives the renderer from here."""
     key: str                              # chave canonica (ex.: "PCNDTIMER")
     gle_xml_types: tuple[str, ...]        # 1+ tipos no XML que mapeiam pra esse bloco
     kind: str                             # categoria ("timer", "latch", "gate"...)
     output_bit_pattern: str | None     # template / "IDENTITY" / None
     label_fallback: str | None = None
-    # Rotulos fixos das portas (na ordem do port_index do GLE). None = bloco
-    # sem rotulos pre-definidos (gates simples como AND/OR/SYMBOL).
-    # Tuple vazia = JSON declarou explicitamente que nao ha rotulos.
-    # Item string vazia ("") = porta existe mas o pin nao recebe glyph -- caso
-    # do output de LATCH no 7xx, em que o nome do bit ja eh suficiente.
+    # Fixed port labels, in the GLE's port_index order. None means the block
+    # declares no labels for that side (a plain gate: AND, OR, SYMBOL). An
+    # empty tuple means the JSON said explicitly that there are none. An empty
+    # string item means the port exists but its pin gets no glyph -- the 7xx
+    # LATCH output, where the bit's name already says enough.
     input_sublabels: tuple[str, ...] | None = None
     output_sublabels: tuple[str, ...] | None = None
     extra: dict = field(default_factory=dict, repr=False)
 
     @property
     def gle_xml_type(self) -> str:
-        """Compat: o primeiro tipo XML mapeado (preferencial)."""
+        """Compatibility: the first XML type mapped, which is the preferred one."""
         return self.gle_xml_types[0] if self.gle_xml_types else self.key
 
     def port_label(self, side: str, index: int) -> str | None:
-        """Rotulo do pin para (side, index). `side` ∈ {"input","output"}.
+        """The pin label for (side, index). `side` is "input" or "output".
 
-        Retorna None se o bloco nao tem rotulos definidos para aquele lado
-        (caller pode mostrar "in 0", "out 1", etc.). Retorna "" quando o
-        bloco declara explicitamente que a porta nao tem glyph (porta sem
-        rotulo, ainda assim presente).
+        Returns None when the block declares no labels for that side, leaving
+        the caller free to show "in 0", "out 1" and so on. Returns "" when the
+        block states explicitly that the port carries no glyph -- it exists,
+        it just has no label.
         """
         seq = self.input_sublabels if side == "input" else self.output_sublabels
         if seq is None:
@@ -143,13 +142,13 @@ class BlockDef:
 
 @dataclass(frozen=True)
 class IdentifierSource:
-    """Onde encontrar um identificador unico do rele dentro do RDB extraido.
+    """Where to find one of a relay's unique identifiers in the extraction.
 
-    `file`  -> nome do arquivo SET_*.TXT (case-insensitive) dentro do
-               diretorio do rele.
-    `key`   -> chave a procurar nesse arquivo (ex.: 'IPADDR', 'RID', 'MAC').
-               O parsing assume linhas no formato `KEY,"VALUE"` (formato
-               nativo dos SET_*.TXT do AcSELerator).
+    `file`  -> the SET_*.TXT file name (matched case-insensitively) inside
+               the relay's directory.
+    `key`   -> the key to look for in it ('IPADDR', 'RID', 'MAC').
+               Parsing assumes `KEY,"VALUE"` lines, which is AcSELerator's
+               native SET_*.TXT format.
     """
     file: str
     key: str
@@ -157,45 +156,46 @@ class IdentifierSource:
 
 @dataclass(frozen=True)
 class RelayModel:
-    """Configuracao de um modelo de rele (corresponde a um JSON)."""
+    """One relay model's profile -- the contents of one JSON file."""
     model: str
     model_aliases: tuple[str, ...]
     ip_address_file: str | None    # ex.: "set_p5.txt" (case-insensitive)
     ip_address_key: str               # ex.: "IPADDR"
     blocks: dict[str, BlockDef]       # key (canonica) -> BlockDef
-    # Como o rele expoe a Relay Word:
-    #   "target_region"        -> 4xx (411L/487E): banco Fast Message TARGET
-    #                             eh autoridade; A5D1 traz so um subset.
-    #                             Dashboard usa AsciiTargetReader.
-    #   "fast_meter_digitals"  -> 7xx (751/787): Relay Word vai TODA dentro da
-    #                             resposta A5D1 (numdigitalbank/digitaloffset).
-    #                             Dashboard consome fm_data['digitals'] direto.
-    #   "tar_digitals"         -> 3xx (311C/311L): analogicos vem do A5D1, mas
-    #                             os digitais NAO. Medido num SEL-311C-1-R509:
-    #                             `VIEW 1:TARGET` e `MAP 1 TARGET BL` respondem
-    #                             "Invalid Command", e o A5D1 anuncia
-    #                             numdigitalbank=111 mas o bloco DNA volta com
-    #                             111 linhas de "*" -- nenhum bit nomeado. Os
-    #                             digitais so saem por `TAR <linha>` ASCII, que
-    #                             devolve 8 bits nomeados por round-trip.
-    #                             Dashboard usa AsciiTargetReader.read_via_tar_rows.
-    # Default = "target_region" preserva o comportamento atual pra reles que
-    # ainda nao tem JSON especifico.
+    # How the relay exposes its Relay Word:
+    #   "target_region"        -> 4xx (411L/487E): the Fast Message TARGET
+    #                             bank is authoritative; A5D1 carries only a
+    #                             subset. Read with the ASCII target reader.
+    #   "fast_meter_digitals"  -> 7xx (751/787): the WHOLE Relay Word is in
+    #                             the A5D1 response
+    #                             (numdigitalbank/digitaloffset), so the
+    #                             digitals come straight from Fast Meter.
+    #   "tar_digitals"         -> 3xx (311C/311L): the analogues come from
+    #                             A5D1, the digitals do NOT. Measured on a
+    #                             SEL-311C-1-R509: `VIEW 1:TARGET` and
+    #                             `MAP 1 TARGET BL` both answer "Invalid
+    #                             Command", and A5D1 advertises
+    #                             numdigitalbank=111 while the DNA block comes
+    #                             back as 111 rows of "*" -- not one named bit.
+    #                             The digitals only come out through ASCII
+    #                             `TAR <row>`, 8 named bits per round trip.
+    # The default, "target_region", preserves the behaviour for a relay that
+    # has no profile of its own yet.
     fast_read: str = "target_region"
     # Index reverso construido no load: xml_type -> BlockDef.
     blocks_by_xml_type: dict[str, BlockDef] = field(default_factory=dict, repr=False)
-    # Familias de SYMBOLs analogicos (ex.: AMV/PMV pra 4xx, MV/MAG/PHASE pra 7xx).
-    # Ordem preservada do JSON -> determina em qual grupo cai um nome que
-    # casaria com mais de um pattern (primeiro vence).
+    # Families of analogue SYMBOLs (AMV/PMV on the 4xx, MV/MAG/PHASE on the
+    # 7xx). The JSON's order is preserved, and it decides which group a name
+    # matching more than one pattern falls into: the first wins.
     analog_groups: tuple = field(default_factory=tuple, repr=False)
-    # Regras de aliasing de nome (GLE/Relay Word -> Fast Meter). Tupla porque
-    # ordem importa (primeira regra que casa vence). Vazia -> resolve_analog_name
-    # eh identidade.
+    # Name aliasing rules (GLE/Relay Word -> Fast Meter). A tuple because
+    # order matters: the first rule that matches wins. Empty means
+    # `resolve_analog_name` is the identity.
     analog_name_aliases: tuple = field(default_factory=tuple, repr=False)
-    # Identificadores unicos adicionais (alem do IP) usados pra cruzar com SCD.
-    # `relay_id` eh o RID/TID que o engenheiro coloca no rele -- normalmente
-    # casa com iedName do SCD por convencao. `mac_address` eh o MAC unicast
-    # quando o firmware expoe em settings (raro no 4xx).
+    # Further unique identifiers, beyond the IP, for cross-matching with an
+    # SCD. `relay_id` is the RID/TID the engineer types into the relay, which
+    # by convention usually matches the SCD's iedName. `mac_address` is the
+    # unicast MAC, when the firmware exposes it in settings (rare on the 4xx).
     relay_id: IdentifierSource | None = None
     mac_address: IdentifierSource | None = None
     source_path: Path | None = field(default=None, repr=False)
@@ -206,18 +206,18 @@ class RelayModel:
 
     @property
     def digitals_via_tar(self) -> bool:
-        """Digitais lidos por `TAR <linha>` ASCII (familia 3xx)."""
+        """Digitals read through ASCII `TAR <row>` (the 3xx family)."""
         return self.fast_read == "tar_digitals"
 
     @property
     def needs_ascii_reader(self) -> bool:
-        """Precisa do AsciiTargetReader (mapa nome -> linha/bit da Relay Word)."""
+        """Needs the ASCII target reader (the name -> row/bit map of the Relay Word)."""
         return self.fast_read in ("target_region", "tar_digitals")
 
     def identifier_sources(self) -> dict[str, IdentifierSource]:
-        """Retorna {kind -> IdentifierSource} pra todos os identificadores
-        unicos configurados. Os kinds canonicos sao 'ip', 'rid', 'mac'.
-        Entradas com file/key ausente sao omitidas.
+        """Return {kind -> IdentifierSource} for every unique identifier this model
+        configures. The canonical kinds are 'ip', 'rid' and 'mac'; an entry
+        missing its file or key is left out.
         """
         out: dict[str, IdentifierSource] = {}
         if self.ip_address_file:
@@ -232,9 +232,9 @@ class RelayModel:
         return out
 
     def analog_group_for(self, symbol_name: str) -> AnalogGroup | None:
-        """Retorna o AnalogGroup que casa com `symbol_name`, ou None se o nome
-        for um bit digital (Relay Word). Usa fullmatch case-insensitive.
-        Primeiro grupo cujo pattern casa vence.
+        """The AnalogGroup matching `symbol_name`, or None when the name is a
+        digital Relay Word bit. Matching is a case-insensitive fullmatch, and
+        the first group whose pattern matches wins.
         """
         if not symbol_name:
             return None
@@ -249,12 +249,11 @@ class RelayModel:
         return self.analog_group_for(symbol_name) is not None
 
     def resolve_analog_name(self, name: str) -> str:
-        """Traduz nome do GLE/Relay Word -> nome no Fast Meter.
+        """Translate a GLE/Relay Word name into its Fast Meter name.
 
-        Ex.: no SEL-487E, IAS (winding S) na Relay Word vira IA1 no fast_meter.
-        Aplica `analog_name_aliases` em ordem; primeira regra que casa vence.
-        Se nenhuma casa, retorna o proprio `name` (uppercase). Comparacao
-        sempre case-insensitive.
+        On a SEL-487E, IAS (winding S) in the Relay Word is IA1 in Fast Meter.
+        `analog_name_aliases` are applied in order and the first match wins;
+        if none matches, `name` comes back uppercased. Always case-insensitive.
         """
         if not name:
             return name
@@ -266,8 +265,8 @@ class RelayModel:
         return nm
 
     def block_for_xml_type(self, xml_type: str) -> BlockDef | None:
-        """Resolve XML type (ex.: 'PLT', 'LATCH', 'PCNDTIMER') -> BlockDef.
-        None se nao houver bloco registrado pra esse tipo no modelo."""
+        """Resolve an XML type ('PLT', 'LATCH', 'PCNDTIMER') to its BlockDef, or
+        None when this model registers no block for that type."""
         if not xml_type:
             return None
         return (self.blocks_by_xml_type.get(xml_type)
@@ -276,10 +275,11 @@ class RelayModel:
                 or self.blocks.get(xml_type.upper()))
 
     def port_label(self, xml_type: str, side: str, index: int) -> str | None:
-        """Rotulo fixo do pin (side ∈ {"input","output"}, index = port_index do GLE).
+        """The pin's fixed label (side is "input" or "output", index is the GLE's
+        port_index).
 
-        None = sem rotulo declarado (caller decide formato fallback).
-        "" = bloco declara que a porta nao tem glyph mas existe.
+        None means no label is declared, and the caller picks a fallback.
+        "" means the block declares the port exists but carries no glyph.
         """
         block = self.block_for_xml_type(xml_type)
         if block is None:
@@ -292,20 +292,21 @@ class RelayModel:
         instance: int,
         name: str = "",
     ) -> str | None:
-        """Resolve o nome do bit de saida DERIVADO de um elemento do GLE.
+        """Resolve the name of the bit DERIVED from a GLE element's output.
 
-        Bits "derivados" sao os que nao aparecem como SYMBOL nomeado no
-        diagrama, mas existem na Relay Word do rele. Ex.: um bloco
-        PCNDTIMER instancia 3 nao tem um SYMBOL "PCT03Q" no GLE, mas o
-        bit existe no rele.
+        A "derived" bit is one that does not appear as a named SYMBOL on the
+        drawing but exists in the relay's Relay Word. A PCNDTIMER at instance
+        3 has no "PCT03Q" SYMBOL in the GLE, yet the bit is there in the
+        relay.
 
-        - Se o bloco usa template (`"PCT{instance:02d}Q"`), formata com
-          `instance`. Se `instance == 0` o bit nao existe (bit derivado so
-          eh estavel para physical_instance_number >= 1).
-        - Se o pattern eh "IDENTITY" ou None, retorna None: esses blocos
-          (SYMBOL, AND, OR, ...) ja sao cobertos por `collect_bit_names()`
-          que escaneia os SYMBOLs do diagrama -- nao ha bit derivado novo.
-        - Bloco nao mapeado: None.
+        - When the block has a template (`"PCT{instance:02d}Q"`), it is
+          formatted with `instance`. At `instance == 0` the bit does not
+          exist: a derived bit is only stable for physical_instance_number
+          >= 1.
+        - When the pattern is "IDENTITY" or None, this returns None. Those
+          blocks (SYMBOL, AND, OR, ...) are already covered by the scan of the
+          drawing's SYMBOLs -- there is no new derived bit to add.
+        - An unmapped block: None.
         """
         block = self.blocks_by_xml_type.get(xml_type) or self.blocks.get(xml_type)
         if block is None or block.output_bit_pattern is None:
@@ -326,9 +327,9 @@ class RelayModel:
 
 
 def _parse_sublabels(raw, field_name: str, source_key: str) -> tuple[str, ...] | None:
-    """Aceita: None/ausente -> None. list[str] -> tuple. Outras formas -> None
-    com aviso (mantem retrocompat com JSONs antigos que tinham "sublabels"
-    apenas declarado e nao consumido)."""
+    """Accepts: None or absent -> None; list[str] -> tuple; anything else ->
+    None with a warning. That last case keeps older JSON files working, the
+    ones that declared "sublabels" without anything consuming them."""
     if raw is None:
         return None
     if isinstance(raw, (list, tuple)):
@@ -345,10 +346,10 @@ def _parse_block(canonical_key: str, raw: dict) -> BlockDef:
         "kind", "gle_xml_type", "output_bit_pattern", "label_fallback",
         "sublabels", "output_sublabels",
     }
-    # gle_xml_type aceita string ou lista de strings (aliases). Ex.:
-    #   "PLT"                -> casa apenas XML type="PLT"
-    #   ["PLT", "LATCH"]     -> casa XML "PLT" OU "LATCH" (mesmo bloco, em
-    #                          firmwares diferentes do mesmo modelo).
+    # gle_xml_type takes a string or a list of them (aliases):
+    #   "PLT"                -> matches XML type="PLT" only
+    #   ["PLT", "LATCH"]     -> matches XML "PLT" OR "LATCH" (the same block,
+    #                           in different firmwares of one model).
     raw_xml = raw.get("gle_xml_type")
     xml_types: tuple[str, ...]
     if raw_xml is None:
@@ -359,8 +360,8 @@ def _parse_block(canonical_key: str, raw: dict) -> BlockDef:
             xml_types = (canonical_key,)
     else:
         xml_types = (str(raw_xml),)
-    # `sublabels` historico = rotulo de INPUT (eh isso que o gle renderer faz);
-    # `output_sublabels` foi adicionado depois pra simetria.
+    # Historically `sublabels` meant the INPUT labels -- that is what the GLE
+    # renderer does with them; `output_sublabels` came later, for symmetry.
     input_subs = _parse_sublabels(raw.get("sublabels"), "sublabels", canonical_key)
     output_subs = _parse_sublabels(
         raw.get("output_sublabels"), "output_sublabels", canonical_key,
@@ -398,8 +399,8 @@ def _load_one(path: Path) -> RelayModel | None:
             continue
         bd = _parse_block(k, v)
         blocks[k.upper()] = bd
-        # Registra todos os aliases de XML type. Se dois blocos colidem no
-        # mesmo XML type, o ultimo definido vence; log de warn pra denunciar.
+        # Register every XML type alias. If two blocks collide on the same
+        # XML type the last one defined wins, and a warning says so out loud.
         for xml_t in bd.gle_xml_types:
             uk = xml_t.upper()
             prev = by_xml.get(uk)
@@ -440,8 +441,9 @@ def _load_one(path: Path) -> RelayModel | None:
 
 
 def _parse_identifier(raw, source: Path, field_name: str) -> IdentifierSource | None:
-    """Parse `{ "file": ..., "key": ... }` -> IdentifierSource. None se ausente
-    ou invalido. Aceita JSON null pra explicitar 'nao disponivel pra esse modelo'.
+    """Parse `{ "file": ..., "key": ... }` into an IdentifierSource. None when
+    absent or invalid. A JSON null is accepted, and says explicitly "not
+    available for this model".
     """
     if raw is None:
         return None
@@ -463,7 +465,7 @@ def _parse_identifier(raw, source: Path, field_name: str) -> IdentifierSource | 
 
 
 def _parse_analog_groups(raw, source: Path) -> tuple:
-    """Parse analog_symbols list -> tuple[AnalogGroup, ...].
+    """Parse the analog_symbols list into a tuple of AnalogGroup.
 
     Schema:
       "analog_symbols": [
@@ -471,8 +473,8 @@ def _parse_analog_groups(raw, source: Path) -> tuple:
           "patterns": ["^AMV\\d+$"] },
         ...
       ]
-    Patterns invalidos sao logados e descartados; grupos sem patterns validos
-    sao descartados tambem.
+    An invalid pattern is logged and dropped; a group left with no valid
+    pattern is dropped too.
     """
     if not raw:
         return ()
@@ -505,7 +507,7 @@ def _parse_analog_groups(raw, source: Path) -> tuple:
 
 
 def _parse_analog_name_aliases(raw, source: Path) -> tuple:
-    """Parse analog_name_aliases -> tuple[AnalogAliasRule, ...].
+    """Parse analog_name_aliases into a tuple of AnalogAliasRule.
 
     Schema:
       "analog_name_aliases": {
@@ -516,8 +518,8 @@ def _parse_analog_name_aliases(raw, source: Path) -> tuple:
         ]
       }
 
-    Regras com regex invalido ou template ausente sao descartadas (com warn).
-    Ausencia ou estrutura invalida -> retorna () sem erro.
+    A rule with an invalid regex or no template is dropped, with a warning.
+    An absent or malformed block returns () rather than raising.
     """
     if not raw:
         return ()
@@ -530,7 +532,7 @@ def _parse_analog_name_aliases(raw, source: Path) -> tuple:
     wmap_raw = raw.get("winding_map") or {}
     if not isinstance(wmap_raw, dict):
         wmap_raw = {}
-    # Normaliza pra uppercase nas chaves e str nos valores.
+    # Keys uppercased, values coerced to str.
     wmap_items = tuple(
         (str(k).upper(), str(v)) for k, v in wmap_raw.items() if str(k).strip()
     )
@@ -567,16 +569,16 @@ _LOADED = False
 
 
 def _normalize(key: str) -> str:
-    """Normaliza pra lookup: upper + strip de espacos."""
+    """Normalise for lookup: uppercase, surrounding blanks stripped."""
     return (key or "").strip().upper()
 
 
 def _key_variants(name: str) -> list[str]:
-    """Gera variantes de busca pro RELAYTYPE.
+    """Produce the lookup variants of a RELAYTYPE.
 
-    RELAYTYPE no Cfg.txt aparece como "SEL-411L-A". Queremos casar com chaves
-    do tipo "SEL-411L-A", "411L-A", "SEL-411L", "411L". Ordem: do mais
-    especifico ao mais generico.
+    Cfg.txt writes RELAYTYPE as "SEL-411L-A", and the registry may key it as
+    "SEL-411L-A", "411L-A", "SEL-411L" or "411L". Ordered most specific
+    first.
     """
     n = _normalize(name)
     if not n:
@@ -591,7 +593,7 @@ def _key_variants(name: str) -> list[str]:
         m = re.match(r"^(.*?)(-[A-Z0-9])+$", base)
         if m:
             variants.append(m.group(1))
-    # dedupe preservando ordem
+    # De-duplicate, preserving order.
     seen: set[str] = set()
     out: list[str] = []
     for v in variants:
@@ -603,12 +605,12 @@ def _key_variants(name: str) -> list[str]:
 
 def load_relay_models(models_dir: Path | None = None,
                        force: bool = False) -> dict[str, RelayModel]:
-    """Carrega (e cacheia) todos os JSONs de modelo de rele.
+    """Load (and memoise) every relay model JSON.
 
-    Sem `models_dir`, procura no overlay do host (se houver) e depois nos
-    arquivos que acompanham o pacote -- nessa ordem, e o PRIMEIRO que define um
-    modelo vence. E' o que deixa acrescentar um modelo em tempo de execucao sem
-    que o overlay precise repetir todos os outros.
+    Without `models_dir`, the host's overlay is searched first and the
+    packaged files second -- in that order, and the FIRST definition of a
+    model wins. That is what lets someone add a model at runtime without the
+    overlay having to repeat all the others.
     """
     global _LOADED, _CACHE, _ALIAS_INDEX
     if _LOADED and not force:
@@ -624,8 +626,8 @@ def load_relay_models(models_dir: Path | None = None,
             m = _load_one(path)
             if m is None:
                 continue
-            # setdefault: o overlay vem primeiro e nao pode ser sobrescrito
-            # pelo arquivo empacotado do mesmo modelo.
+            # setdefault: the overlay comes first and must not be
+            # overwritten by the packaged file for the same model.
             cache.setdefault(_normalize(m.model), m)
             for a in (m.model, *m.model_aliases):
                 alias.setdefault(_normalize(a), m)
@@ -645,14 +647,16 @@ def lookup(relaytype: str) -> RelayModel | None:
     return None
 
 
-# Casa `KEY,"value"` ou `KEY,value` (sem aspas) no formato dos SET_*.TXT.
-# Strip de CIDR opcional ("/24") em IPs eh feito pelo chamador.
+# Matches `KEY,"value"` or `KEY,value` (unquoted), as the SET_*.TXT files
+# write them. Stripping an optional CIDR suffix ("/24") from an IP is the
+# caller's job.
 _SETTING_RE_TEMPLATE = r'^\s*{key}\s*,\s*"?([^",\r\n]+)"?'
 
 
 def _read_setting(relay_dir: Path, src: IdentifierSource) -> str | None:
-    """Le um setting `key` do arquivo `file` dentro de `relay_dir`. Case-
-    insensitive no nome do arquivo e na chave. Retorna o valor cru (sem aspas).
+    """Read setting `key` from file `file` inside `relay_dir`. Both the file
+    name and the key are matched case-insensitively. Returns the raw value,
+    without its quotes.
     """
     target = src.file.lower()
     found: Path | None = None
@@ -682,13 +686,14 @@ def read_identifiers(
     relay_dir: Path,
     model: str | None,
 ) -> dict[str, str | None]:
-    """Le todos os identificadores unicos configurados pro modelo do rele.
+    """Read every unique identifier this relay model configures.
 
-    Retorna `{kind: value}` com chaves 'ip', 'rid', 'mac' (presentes apenas
-    quando o JSON do modelo define a fonte E o arquivo existe no diretorio).
-    Para IPs, tira o sufixo CIDR ('/24') do valor cru se houver.
+    Returns `{kind: value}` keyed by 'ip', 'rid' and 'mac' -- each present
+    only when the model's JSON declares the source AND the file exists in the
+    directory. For an IP, a CIDR suffix ('/24') is stripped from the raw
+    value.
 
-    Se nao houver RelayModel pro `model`, retorna dict vazio.
+    With no model for `model`, returns an empty dict.
     """
     rm = lookup(model or "")
     if rm is None:

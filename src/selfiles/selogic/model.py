@@ -1,32 +1,32 @@
 """
-Normalizador familia-aware: linhas de SET_*.TXT -> Variable em forma canonica.
+A family-aware normaliser: SET_*.TXT lines -> Variables in canonical form.
 
-A saida deste modulo eh consumida pelo Comparador de Ajustes do PAC CT
-e pelo CLI smoke (`tools/check_settings_compare.py`).
+What this module produces is what a settings comparison consumes: it turns
+each family's own spelling into one shape that can be compared across relays.
 
-Cada variavel tem N "campos" comparaveis:
+Each variable has N comparable "fields":
 
   - latch    : 'set', 'reset'
   - timer    : 'input', 'pickup', 'dropout'
   - counter  : 'count_down', 'count_up', 'load', 'preset'
-  - direct   : 'value' (uma unica expressao)
+  - direct   : 'value' (a single expression)
   - numeric  : 'value'
   - enum     : 'value'
   - string   : 'value'
-  - math     : 'value' (expressao matematica nao-booleana)
+  - math     : 'value' (a non-boolean mathematical expression)
 
-Convencao de nomes canonicos por familia (resumo, fonte: SEL-411L IM
-Tabela 13.24 + leitura dos RDBs reais):
+The canonical naming convention per family (summarised from the SEL-411L
+instruction manual, table 13.24, and from reading real RDBs):
 
   3xx (311C/L)  4xx (411L/487E)      7xx (751/787)
   ----------    ---------------      ---------------
   LT1..LT16     PLT01..PLT32         LT01..LT64        (latches)
-  SV1..SV16     PSV01.. + PCT01..    SV01..SV64        (variaveis logicas + timers)
-  -             ASV001..ASV256       MV01..MV64        (math/auto vars)
+  SV1..SV16     PSV01.. + PCT01..    SV01..SV64        (logic variables + timers)
+  -             ASV001..ASV256       MV01..MV64        (math / automation vars)
   -             AMV001.. + ACT01..   -
   -             PCN01..PCN32         SC01..SC64        (counters)
 
-API publica:
+Public API:
 
     normalize_relay(relay_dir, family) -> RelayModel
     Variable, VarField, Source              (dataclasses)
@@ -73,12 +73,12 @@ FieldKind = Literal["logic", "number", "enum", "string", "set_list"]
 
 @dataclass(frozen=True)
 class VarField:
-    """Um valor comparavel dentro de uma Variavel.
+    """One comparable value inside a Variable.
 
-    `kind` decide o caminho do comparator (logic/number/enum/string/set_list).
-    `raw` eh o valor como veio do arquivo, antes de qualquer normalizacao
-    (inclui comentario `# ...` se houver). `comment` e `body` sao extraidos
-    para conveniencia do UI.
+    `kind` decides which path the comparator takes (logic, number, enum,
+    string, set_list). `raw` is the value exactly as it came out of the file,
+    before any normalisation, including a `# ...` comment if there was one;
+    `comment` and `body` are split out for a UI's convenience.
     """
     name: str         # 'set' / 'reset' / 'input' / 'pickup' / ...
     kind: FieldKind
@@ -104,7 +104,7 @@ class Variable:
 
 @dataclass
 class GroupModel:
-    """Variaveis canonicas de um grupo (uma "aba" no UI)."""
+    """The canonical variables of one group -- a "tab" in the UI."""
     group_key: str
     group_label: str
     file_basename: str        # ex.: "SET_L1.TXT"
@@ -113,7 +113,7 @@ class GroupModel:
 
 @dataclass
 class RelayModel:
-    """Snapshot normalizado de um rele (todos os SET_*.TXT)."""
+    """A normalised snapshot of one relay: all of its SET_*.TXT files."""
     relay_name: str
     relaytype: str | None
     family: Family
@@ -129,9 +129,9 @@ _ASSIGN_RE = re.compile(r'^\s*([A-Za-z0-9_]+)\s*:=\s*(.*)$', re.DOTALL)
 
 
 def _split_assignment(raw_value: str) -> tuple[str | None, str]:
-    """Para 4xx: separa `LHS := RHS [# comment]` em (LHS, "RHS [# comment]").
+    """For the 4xx: split `LHS := RHS [# comment]` into (LHS, "RHS [# comment]").
 
-    Se nao tem `:=`, retorna (None, raw_value)."""
+    With no `:=`, returns (None, raw_value)."""
     m = _ASSIGN_RE.match(raw_value)
     if not m:
         return None, raw_value
@@ -150,9 +150,9 @@ _ENUM_RE = re.compile(r"^[A-Za-z][A-Za-z0-9_]*(?:,[A-Za-z][A-Za-z0-9_]*)*$")
 # Valores tipicos: "Y", "N", "OFF", "S,T", "DAB", "1PH", "ABC"
 
 
-#: O `kind` que `_infer_kind` devolve -> o `kind` da Variable. Estava escrito
-#: inline em quatro lugares; um dicionario com quatro entradas repetido quatro
-#: vezes e' quatro lugares pra divergir.
+#: The `kind` `_infer_kind` returns -> the Variable's own `kind`. This was
+#: written inline in four places; a four-entry dictionary repeated four times
+#: is four places to diverge.
 _VAR_KIND_FOR_FIELD: dict[str, VarKind] = {
     "logic": "direct",
     "number": "number",
@@ -162,17 +162,17 @@ _VAR_KIND_FOR_FIELD: dict[str, VarKind] = {
 
 
 def _infer_kind(value: str, dialect: sp.Dialect) -> Literal["logic", "number", "enum", "string"]:
-    """Heuristica leve sobre o conteudo de uma linha k/v generica (fora de
-    SET_L*/SET_A*)."""
+    """A light heuristic over the content of a generic key/value line -- one
+    outside SET_L* and SET_A*."""
     s = value.strip()
     if s == "":
         return "string"
     if _NUM_RE.match(s):
         return "number"
-    # Algumas chaves carregam multi-token enum: "S,T" / "DAB" / "ABC" / "Y" / "N"
+    # Some keys carry a multi-token enum: "S,T", "DAB", "ABC", "Y", "N".
     if _ENUM_RE.match(s) and len(s) <= 12 and "AND" not in s.upper() and "OR" not in s.upper():
         return "enum"
-    # Tenta parsear como booleano. Se passa, eh logic.
+    # Try to parse it as a boolean. If that works, it is logic.
     if sp.is_boolean_expression(s, dialect):
         return "logic"
     return "string"
@@ -202,37 +202,37 @@ def _mk_field(
 # 4xx normalizer (PROTSEL/AUTO via `LHS := RHS`)
 # ---------------------------------------------------------------------------
 
-# Sufixos que identificam papeis dentro de uma variavel composta.
+# The suffixes that name the roles inside a composite variable.
 _4XX_LATCH_RE = re.compile(r"^(?P<base>[A-Z]+\d+)(?P<role>[SR])$")
 _4XX_TIMER_RE = re.compile(r"^(?P<base>P?CT\d+|ACT\d+)(?P<role>IN|PU|DO)$")
 _4XX_COUNTER_RE = re.compile(
     r"^(?P<base>P?CN\d+|ACN\d+)(?P<role>IN|CU|CD|LD|PV|R)$"
 )
-# PSV/ASV/AMV/PMV sao "direct" (uma equacao = uma variavel)
+# PSV/ASV/AMV/PMV are "direct": one equation is one variable.
 
 
 # ---------------------------------------------------------------------------
-# Reports (SOE / SER) -- tratamento especial
+# Reports (SOE / SER) -- handled specially
 # ---------------------------------------------------------------------------
 #
-# Os ajustes de Sequence of Events Recorder (SER) tem semantica diferente do
-# resto: a *posicao no arquivo nao importa*. O que importa eh quais wordbits
-# o rele esta registrando no SOE e qual o alias atribuido a cada um.
+# The Sequence of Events Recorder (SER) settings mean something different from
+# the rest: *position in the file does not matter*. What matters is which word
+# bits the relay is recording, and the alias given to each.
 #
-#   4xx (SET_R1.TXT): slots numerados de 5 campos por wordbit --
-#     SITM<n>="wordbit", SNAME<n>="nome", SSET<n>="alias asserted",
-#     SCLR<n>="alias deasserted", SHMI<n>="Y/N pro alarme do HMI".
-#     Reagrupado pelo VALOR de SITM<n> (o wordbit eh a chave estavel).
+#   4xx (SET_R1.TXT): numbered slots of 5 fields per word bit --
+#     SITM<n>="word bit", SNAME<n>="name", SSET<n>="asserted alias",
+#     SCLR<n>="deasserted alias", SHMI<n>="Y/N for the HMI alarm".
+#     Regrouped by the VALUE of SITM<n>, since the word bit is the stable key.
 #
-#   7xx (set_R.txt): listas SER1..SER4 (CSV de wordbits) + ALIAS<n> com 4
-#     tokens space-separated: wordbit, nome, alias_asserted, alias_deasserted.
-#     SER<n> comparado como conjunto; ALIAS reagrupado pelo wordbit.
+#   7xx (set_R.txt): SER1..SER4 lists (CSV of word bits) plus ALIAS<n> with 4
+#     space-separated tokens: word bit, name, asserted alias, deasserted
+#     alias. SER<n> is compared as a set; ALIAS is regrouped by word bit.
 #
-#   3xx (SET_R.TXT): apenas SER1..SERn (CSV); sem aliases.
+#   3xx (SET_R.TXT): SER1..SERn only (CSV), with no aliases.
 #
-# Padrao: o usuario quer ver UMA linha por wordbit registrado, comparando os
-# aliases que cada rele atribui (e detectando quando o mesmo bit esta
-# registrado em posicoes diferentes entre os reles).
+# The pattern: someone wants ONE row per recorded word bit, comparing the
+# aliases each relay assigns -- and catching when the same bit is recorded at
+# different positions on different relays.
 
 import re as _re
 
@@ -241,7 +241,7 @@ _SER_RE = _re.compile(r"^SER(\d+)$")
 _ALIAS_RE = _re.compile(r"^ALIAS(\d+)$")
 
 
-#: (SITM|SNAME|SSET|SCLR|SHMI) -> (nome do campo, kind).
+#: (SITM|SNAME|SSET|SCLR|SHMI) -> (field name, kind).
 _SER_FIELDS_4XX: dict[str, tuple[str, FieldKind]] = {
     "SITM":  ("wordbit",      "enum"),
     "SNAME": ("alias_nome",   "string"),
@@ -259,17 +259,17 @@ def _ser_field_for_4xx(role: str) -> tuple[str, FieldKind]:
 def _reports_normalize(
     ps: ParsedSettings, group: Group, family: Family,
 ) -> GroupModel:
-    """Normaliza a secao de relatorios (SER) com tratamento especial.
+    """Normalise the reports (SER) section, which needs its own treatment.
 
-    Retorna um GroupModel onde os SER items aparecem agrupados pelo wordbit
-    (nao pelo slot) e as listas SER<n> sao kind=ser_list.
+    Returns a GroupModel in which the SER items are grouped by word bit rather
+    than by slot, and the SER<n> lists have kind=ser_list.
     """
     gm = GroupModel(
         group_key=group.key, group_label=group.label,
         file_basename=group.file_basename,
     )
 
-    # Buffer pra coletar slots SITM antes de agrupar
+    # A buffer, collecting the SITM slots before they are grouped.
     sitm_slots: dict[int, dict[str, tuple[str, Source]]] = {}
 
     for line in ps.lines:
@@ -298,20 +298,20 @@ def _reports_normalize(
         # 7xx: ALIAS<n> -- 4 tokens space-separated
         m = _ALIAS_RE.match(key) if family == "7xx" else None
         if m:
-            # Pula entradas vazias ("NA" ou "NA NA NA NA" eh comum)
+            # Skip empty entries: "NA", or "NA NA NA NA", are common.
             tokens = value.split()
             if not tokens or (len(tokens) == 1 and tokens[0].upper() == "NA"):
                 continue
             wordbit = tokens[0]
             slot = int(m.group(1))
-            # Variable name = wordbit; multiple aliases para o mesmo wordbit
-            # (raro mas possivel) sao mesclados, o ultimo vence.
+            # The variable's name IS the word bit. Several aliases for one
+            # word bit (rare, but possible) are merged, last one winning.
             var_name = wordbit
             v = gm.variables.get(var_name)
             if v is None:
                 v = Variable(name=var_name, kind="ser_item")
                 gm.variables[var_name] = v
-            # Campos: nome, asserted, deasserted -- os 3 tokens restantes
+            # Fields: name, asserted, deasserted -- the 3 remaining tokens.
             asserted = tokens[2] if len(tokens) > 2 else ""
             deasserted = tokens[3] if len(tokens) > 3 else ""
             friendly = tokens[1] if len(tokens) > 1 else ""
@@ -319,13 +319,13 @@ def _reports_normalize(
                 _mk_field("alias_nome", "string", friendly, source),
                 _mk_field("alias_asserted", "string", asserted, source),
                 _mk_field("alias_deasserted", "string", deasserted, source),
-                # Slot original pra mostrar como metadado no UI
+                # The original slot, kept as metadata for the UI.
                 _mk_field("slot", "number", str(slot), source),
             ]
             v.sources = [source]
             continue
 
-        # Outras chaves da secao R: tratamento generico
+        # Any other key in the R section: handled generically.
         dialect: sp.Dialect = ("symbolic" if family == "3xx"
                                else "keyword")
         kind = _infer_kind(value, dialect)
@@ -345,10 +345,10 @@ def _reports_normalize(
         wordbit, sitm_source = sitm_pair
         wordbit = wordbit.strip()
         if not wordbit:
-            # Slot vazio -- nao registra
+            # An empty slot: nothing recorded.
             continue
-        # Variable name = wordbit. Conflito (mesmo wordbit em 2 slots) -- raro,
-        # mas se acontecer, o ultimo vence.
+        # The variable's name IS the word bit. A conflict (the same word bit
+        # in two slots) is rare, but if it happens the last one wins.
         var_name = wordbit
         fields: list[VarField] = []
         for role in ("SITM", "SNAME", "SSET", "SCLR", "SHMI"):
@@ -371,7 +371,7 @@ def _reports_normalize(
 # 4xx normalizer (PROTSEL/AUTO via `LHS := RHS`)
 # ---------------------------------------------------------------------------
 
-# Sufixos que identificam papeis dentro de uma variavel composta.
+# The suffixes that name the roles inside a composite variable.
 def _4xx_role_of(lhs: str) -> tuple[str, str, VarKind]:
     """Mapeia o LHS de 4xx para (variavel_canonica, papel, kind).
 
@@ -381,13 +381,13 @@ def _4xx_role_of(lhs: str) -> tuple[str, str, VarKind]:
     m = _4XX_LATCH_RE.match(lhs)
     if m:
         base = m.group("base")
-        # PLT01S -> PLT01 / role=set ; PLT01R -> PLT01 / role=reset
-        # PSV30 nao casa (nao tem S/R sufixo nesse formato).
-        # Mas LATCH_RE casaria PSV30S/PSV30R se existissem.
+        # PLT01S -> PLT01 / role=set ; PLT01R -> PLT01 / role=reset.
+        # PSV30 does not match: it has no S/R suffix in this form. LATCH_RE
+        # would match PSV30S/PSV30R, if those existed.
         if base.startswith(("PLT", "ALT")):
             role = "set" if m.group("role") == "S" else "reset"
             return base, role, "latch"
-        # Outros sufixos S/R nao definem latch -- nao agrupar.
+        # Other S/R suffixes do not define a latch: do not group them.
     m = _4XX_TIMER_RE.match(lhs)
     if m:
         base = m.group("base")
@@ -401,7 +401,7 @@ def _4xx_role_of(lhs: str) -> tuple[str, str, VarKind]:
             "LD": "load", "PV": "preset", "R": "reset",
         }
         return base, role_map[m.group("role")], "counter"
-    # Default: a variavel eh o proprio LHS, e o campo eh 'value'.
+    # Default: the variable IS the LHS, and the field is 'value'.
     return lhs, "value", "direct"
 
 
@@ -426,7 +426,8 @@ def _4xx_normalize_section(
             if lhs is None:
                 # Linha vazia ou mal-formada -- ignora silenciosamente.
                 if line.value.strip():
-                    # Conteudo mas sem `:=` -- registra como variavel anonima.
+                    # Content, but no `:=`: recorded as an anonymous
+                    # variable.
                     pass
                 continue
             base_name, role, var_kind = _4xx_role_of(lhs)
@@ -446,10 +447,10 @@ def _4xx_normalize_section(
             v.fields.append(fld)
             v.sources.append(source)
         else:
-            # Linha k/v "direta". A variavel eh o proprio nome.
+            # A "direct" key/value line. The variable is the key itself.
             value = line.value
-            # Algumas chaves em SET_S* etc. tem comentario embutido raro;
-            # tratamos como string/enum/number.
+            # A few keys in SET_S* and friends carry an inline comment,
+            # rarely; they are treated as string, enum or number.
             kind = _infer_kind(value, "keyword")
             fld = _mk_field("value", kind, value, source)
             v = Variable(
@@ -458,13 +459,13 @@ def _4xx_normalize_section(
                 fields=[fld],
                 sources=[source],
             )
-            # Sobre-escreve em caso de duplicata (raro e nao-significante).
+            # On a duplicate, overwrite: rare, and not meaningful.
             gm.variables[line.key] = v
     return gm
 
 
 # ---------------------------------------------------------------------------
-# 7xx normalizer (slot-indexed; sem `:=`)
+# The 7xx normaliser: slot-indexed, with no `:=`
 # ---------------------------------------------------------------------------
 
 _7XX_SLOT_LATCH_RE = re.compile(r"^(SET|RST)(\d+)$")
@@ -526,8 +527,8 @@ def _7xx_normalize_section(
             if m:
                 base = f"MV{int(m.group(1)):02d}"
                 fld = _mk_field("value", "logic", value, source)
-                # Math var -- a expressao pode ser matematica, comparator
-                # caira em texto-com-tolerancia.
+                # A math variable: the expression may be mathematical, and
+                # the comparator will fall back to text with a tolerance.
                 v = Variable(name=base, kind="math", fields=[fld], sources=[source])
                 gm.variables[base] = v
                 continue
@@ -565,13 +566,13 @@ def _7xx_normalize_section(
 
             m = _7XX_SLOT_TMB_RE.match(key)
             if m:
-                # TMB1A, TMB1B etc. -- cada um eh uma variavel independente.
+                # TMB1A, TMB1B and so on: each is its own variable.
                 fld = _mk_field("value", "logic", value, source)
                 v = Variable(name=key, kind="direct", fields=[fld], sources=[source])
                 gm.variables[key] = v
                 continue
 
-        # Fallback: linha k/v direta. Tipo inferido.
+        # Fallback: a direct key/value line, with the kind inferred.
         kind = _infer_kind(value, "keyword")
         fld = _mk_field("value", kind, value, source)
         gm.variables[key] = Variable(
@@ -585,7 +586,7 @@ def _7xx_normalize_section(
 
 
 # ---------------------------------------------------------------------------
-# 3xx normalizer (slot-indexed pra LT; resto eh direto)
+# The 3xx normaliser: slot-indexed for LT, direct for the rest
 # ---------------------------------------------------------------------------
 
 _3XX_SLOT_LATCH_RE = re.compile(r"^(SET|RST)(\d+)$")
@@ -657,10 +658,11 @@ _NORMALIZERS = {
 
 
 def normalize_relay(relay_dir: Path, family: Family, relay_name: str | None = None) -> RelayModel:
-    """Le todos os SET_*.TXT do diretorio e produz um RelayModel canonico.
+    """Read every SET_*.TXT in the directory and produce a canonical RelayModel.
 
-    `family` deve ser inferida antes pelo caller via `family_from_relaytype`.
-    `relay_name` default eh o basename do diretorio.
+    `family` must be inferred by the caller first, with
+    `family_from_relaytype`. `relay_name` defaults to the directory's
+    basename.
     """
     if relay_name is None:
         relay_name = relay_dir.name
@@ -675,7 +677,8 @@ def normalize_relay(relay_dir: Path, family: Family, relay_name: str | None = No
             relaytype = ps.relaytype
         group = find_group_by_filename(family, ps.path.name)
         if group is None:
-            # Arquivo nao listado no catalogo (e.g., um SET futuro). Ignora.
+            # A file the catalogue does not list (a future SET, say):
+            # ignored.
             continue
         gm = norm(ps, group)
         groups[group.key] = gm
@@ -690,7 +693,7 @@ def normalize_relay(relay_dir: Path, family: Family, relay_name: str | None = No
 
 
 def iter_groups_in_catalog_order(model: RelayModel) -> Iterator[GroupModel]:
-    """Itera grupos na ordem do catalogo (pra renderizar abas)."""
+    """Iterate the groups in catalogue order, which is the order the tabs render."""
     for g in groups_for_family(model.family):
         if g.key in model.groups:
             yield model.groups[g.key]

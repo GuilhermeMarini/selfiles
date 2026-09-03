@@ -1,28 +1,28 @@
 r"""
-Parser de equacoes SELOGIC com suporte aos dois dialetos.
+Parser for SELOGIC equations, in both dialects.
 
-SEL usa duas sintaxes incompativeis para suas equacoes booleanas:
+SEL uses two incompatible syntaxes for its boolean equations:
 
-  - **Symbolic** (familias 3xx / 351-series): `*` AND, `+` OR, `!` NOT,
-    `/X` borda de subida, `\X` borda de descida. Sem palavras-chave.
-    Ex.: `52A := !IN101*IN102` ou `TR := Z1T+Z2T+/SV3`.
+  - **Symbolic** (3xx / 351 series): `*` for AND, `+` for OR, `!` for NOT,
+    `/X` for a rising edge, `\X` for a falling edge. No keywords.
+    e.g. `52A := !IN101*IN102` or `TR := Z1T+Z2T+/SV3`.
 
-  - **Keyword** (familias 4xx / 7xx / 400-series): `AND`, `OR`, `NOT`,
-    `R_TRIG X`, `F_TRIG X`. `#` comecando um comentario ate o fim da linha.
-    Ex.: `PLT11S := R_TRIG VB002 # latch set`.
+  - **Keyword** (4xx / 7xx / 400 series): `AND`, `OR`, `NOT`, `R_TRIG X`,
+    `F_TRIG X`, and `#` starting a comment that runs to end of line.
+    e.g. `PLT11S := R_TRIG VB002 # latch set`.
 
-Os dois dialetos produzem o mesmo AST -- a comparacao downstream nao precisa
-saber de qual familia vieram as equacoes (a familia eh checada no UI, antes
-do diff).
+Both dialects produce the same AST, so nothing downstream needs to know which
+family an equation came from (the family is checked in the UI, before the
+diff).
 
-Tratamento de bordas (`R_TRIG`/`F_TRIG`/`/`/`\`):
-Sao operadores stateful que dependem da historia do bit, nao da combinacao
-booleana. Para comparacao de equivalencia, tratamos um `R_TRIG X` ou `/X`
-como um *atomo distinto* (nome canonico "R_TRIG:X"). Assim duas equacoes
-que so diferem na ordem dos operandos sao detectadas como equivalentes via
-tabela verdade, sem precisar modelar a temporalidade do trigger.
+How edges are handled (`R_TRIG` / `F_TRIG` / `/` / `\`): they are stateful
+operators, depending on the bit's history rather than on the boolean
+combination. For equivalence comparison, `R_TRIG X` and `/X` are treated as a
+*distinct atom* (canonical name "R_TRIG:X"). Two equations that differ only in
+operand order are then found equivalent by the truth table, without having to
+model the trigger's behaviour over time.
 
-API publica:
+Public API:
 
     parse(expr, dialect) -> Node                  (raises ParseError)
     is_boolean_expression(expr, dialect) -> bool
@@ -39,23 +39,24 @@ from dataclasses import dataclass
 from typing import Literal as _TypingLiteral
 from typing import TypeAlias
 
-# `Literal` e' o nome do NO da arvore (um literal booleano do SELOGIC), e ele
-# e' declarado mais abaixo neste mesmo modulo. O `typing.Literal` entra com
-# outro nome de proposito: sem isso o segundo sombreia o primeiro a partir da
-# linha da classe, e qualquer anotacao `Literal[...]` escrita daqui pra baixo
-# passaria a significar o dataclass em vez do tipo.
+# `Literal` is the name of a tree NODE here (a SELOGIC boolean literal),
+# declared further down in this same module. `typing.Literal` comes in under
+# another name on purpose: without that, the class shadows the type from its
+# own line onwards, and any `Literal[...]` annotation written below would
+# quietly mean the dataclass instead of the type.
 Dialect: TypeAlias = _TypingLiteral["symbolic", "keyword"]
 
 
 class ParseError(Exception):
-    r"""Levantada quando a expressao nao casa com a gramatica booleana SELOGIC.
+    r"""Raised when the expression does not match the SELOGIC boolean grammar.
 
-    Causas tipicas:
-      - expressao matematica (ex.: `(IA+IB)/3`) em contexto que esperava boolean
-      - operador desconhecido (ex.: `<=`, `<>`)
-      - caractere nao reconhecido
-      - parenteses desbalanceados
-      - argumento invalido pra R_TRIG/F_TRIG/`/`/`\` (deve ser um identificador unico)
+    Typical causes:
+      - a mathematical expression (`(IA+IB)/3`) where a boolean was expected
+      - an unknown operator (`<=`, `<>`)
+      - an unrecognised character
+      - unbalanced parentheses
+      - an invalid argument to R_TRIG/F_TRIG/`/`/`\` (it must be a single
+        identifier)
     """
 
 
@@ -65,9 +66,9 @@ class ParseError(Exception):
 
 @dataclass(frozen=True)
 class Atom:
-    """Identificador (relay-word bit). Pode incluir um prefixo de borda no
-    nome canonico, e.g. `R_TRIG:VB002` -- a borda eh dobrada no atomo para
-    que tabela-verdade trate-a como independente."""
+    """An identifier (a Relay Word bit). The canonical name may carry an edge
+    prefix, e.g. `R_TRIG:VB002` -- the edge is folded into the atom so the
+    truth table treats it as independent."""
     name: str
 
     def __repr__(self) -> str:  # canonico
@@ -88,7 +89,7 @@ class Not:
     child: Node
 
     def __repr__(self) -> str:
-        # Sempre paren-wrap o filho para nao ambiguidade textual.
+        # Always parenthesise the child, so the text is never ambiguous.
         return f"!{_wrap(self.child)}"
 
 
@@ -140,11 +141,11 @@ _KEYWORDS = {"AND": "AND", "OR": "OR", "NOT": "NOT", "R_TRIG": "RTRIG", "F_TRIG"
 
 
 def _tokenize(src: str, dialect: Dialect) -> list[Tok]:
-    """Tokeniza a expressao. Strip de comentario `# ...` ate o fim.
+    """Tokenise the expression, stripping a `# ...` comment to end of line.
 
-    Comentarios so existem no dialeto keyword (4xx/7xx). No symbolic, qualquer
-    `#` seria erro -- mas como o caller normalmente ja strip-a o comentario
-    antes de chamar, ainda assim aceitamos para robustez.
+    Comments exist only in the keyword dialect (4xx/7xx). In the symbolic one
+    a `#` would be an error -- but since the caller has usually stripped the
+    comment already, one is accepted here rather than refused.
     """
     # Strip do comentario (em ambos dialetos, defensivo)
     h = src.find("#")
@@ -177,7 +178,7 @@ def _tokenize(src: str, dialect: Dialect) -> list[Tok]:
             if c == "\\":
                 toks.append(Tok("FTRIG", c, i)); i += 1; continue
 
-        # Identificador / numero
+        # Identifier or number
         m = _IDENT_RE.match(src, i)
         if m:
             text = m.group(0)
@@ -188,16 +189,16 @@ def _tokenize(src: str, dialect: Dialect) -> list[Tok]:
                     toks.append(Tok(_KEYWORDS[up], up, i))
                     i = m.end()
                     continue
-            # Detecta numero literal (0 ou 1) para representar boolean constante.
-            # Qualquer outro numero (e.g., 0.5, 12) pode aparecer em equacoes
-            # matematicas -- e.g., `PCT07PU := 0.000000`. Tratamos como ParseError
-            # via flag: caller decide se a equacao e matematica.
+            # A literal 0 or 1 is a boolean constant. Any other number
+            # (0.5, 12) belongs to a mathematical equation -- `PCT07PU :=
+            # 0.000000`, say -- and is raised as a ParseError with a flag, so
+            # the caller decides whether the equation is mathematical.
             if text.isdigit() and text in ("0", "1"):
                 toks.append(Tok("NUM", text, i))
                 i = m.end()
                 continue
             if text.isdigit():
-                # Numero inteiro >1: nao e boolean. Sinalize ao caller.
+                # An integer above 1 is not boolean. Tell the caller.
                 raise ParseError(
                     f"numero {text!r} nao e literal booleano (posicao {i})"
                 )
@@ -211,7 +212,7 @@ def _tokenize(src: str, dialect: Dialect) -> list[Tok]:
                 f"caractere {c!r} sugere expressao matematica (posicao {i})"
             )
 
-        # Operadores math/comparison nao suportados em boolean
+        # Math and comparison operators have no meaning in a boolean
         if c in "+-*/<>=":
             raise ParseError(
                 f"operador {c!r} nao valido no dialeto {dialect!r} (posicao {i})"
@@ -281,8 +282,8 @@ class _Parser:
             return Not(self._parse_unary())
         if t.kind in ("RTRIG", "FTRIG"):
             self._eat(t.kind)
-            # Argumento DEVE ser um identificador unico (per manual 411L p.1273
-            # e 751 p.365). Nao aceitar parenteses.
+            # The argument MUST be a single identifier (411L manual p.1273,
+            # 751 manual p.365). Parentheses are not accepted.
             arg = self._peek()
             if arg is None or arg.kind != "IDENT":
                 raise ParseError(
@@ -313,7 +314,7 @@ class _Parser:
 
 
 def parse(expr: str, dialect: Dialect) -> Node:
-    """Tokeniza e parseia. ParseError se nao for booleano valido."""
+    """Tokenise and parse. Raises ParseError if this is not a valid boolean."""
     toks = _tokenize(expr, dialect)
     if not toks:
         raise ParseError("expressao vazia")
@@ -334,7 +335,7 @@ def is_boolean_expression(expr: str, dialect: Dialect) -> bool:
 # ---------------------------------------------------------------------------
 
 def atoms(node: Node) -> set[str]:
-    """Conjunto de nomes de atomos referenciados no AST."""
+    """The set of atom names referenced anywhere in the AST."""
     out: set[str] = set()
     _collect_atoms(node, out)
     return out
@@ -353,7 +354,7 @@ def _collect_atoms(node: Node, out: set[str]) -> None:
 
 
 def evaluate(node: Node, env: dict[str, bool]) -> bool:
-    """Avalia AST sob um mapeamento atomo->bool. Atomos ausentes => False."""
+    """Evaluate the AST under an atom -> bool mapping. A missing atom is False."""
     if isinstance(node, Atom):
         return env.get(node.name, False)
     if isinstance(node, Literal):
@@ -368,13 +369,14 @@ def evaluate(node: Node, env: dict[str, bool]) -> bool:
 
 
 def canonicalize(node: Node) -> Node:
-    """Normaliza:
+    """Normalise:
       - NOT NOT x -> x
-      - flatten AND-of-AND e OR-of-OR
-      - sort children de AND/OR pelo repr canonico
+      - flatten AND-of-AND and OR-of-OR
+      - sort the children of AND/OR by their canonical repr
       - And(()) -> Literal(True), Or(()) -> Literal(False), And((x,)) -> x
 
-    Nao aplica leis distributivas/De Morgan -- isso fica para a tabela verdade.
+    Distributive and De Morgan laws are deliberately NOT applied -- that is
+    what the truth table is for.
     """
     if isinstance(node, Atom) or isinstance(node, Literal):
         return node

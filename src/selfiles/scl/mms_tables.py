@@ -21,11 +21,11 @@ _logger = logging.getLogger(__name__)
 
 _LOCK = threading.Lock()
 _CACHE: dict = {}
-# Um FLAG, e nao a verdade do proprio dicionario. `if _CACHE:` parece a mesma
-# coisa e nao e': com o diretorio vazio, cada consulta varria o disco de novo;
-# e, pior, quando um arquivo levantava no meio do laco as entradas ja lidas
-# ficavam no cache e a chamada SEGUINTE devolvia um registro pela metade sem
-# dizer nada -- o 411L achado, o 751 sumido.
+# A FLAG, not the truth of the dictionary itself. `if _CACHE:` looks like the
+# same thing and is not: with an empty directory it re-scanned the disk on
+# every lookup and, worse, when one file raised mid-loop the entries already
+# read stayed cached and the NEXT call returned half a registry in silence --
+# the 411L found, the 751 gone.
 _LOADED = False
 
 # Ordered FC preference for collapsing several 61850 points that share one
@@ -99,33 +99,33 @@ def is_boolean_status(da) -> bool:
     return len(parts) == 1 and parts[0] in BOOLEAN_STATUS_DAS
 
 
-# -- os DA enumerados, que so' viram bit COM uma regra ----------------------
+# -- the enumerated DAs, which become a bit ONLY with a rule ---------------
 #
-# Um `Pos$stVal` e' um DPS: o valor e' um Dbpos (0 intermediate, 1 off, 2 on,
-# 3 bad-state), nao um booleano. Um `Health$stVal` e' um INS, um `dirGeneral`
-# e' um enumerado. Nenhum deles se le' com `int(bool(x))` -- e a py61850
-# devolve um Dbpos como a STRING "10", cujo `bool()` e' True inclusive para
-# "00", ou seja, disjuntor pintado fechado para sempre.
+# A `Pos$stVal` is a DPS: its value is a Dbpos (0 intermediate, 1 off, 2 on,
+# 3 bad-state), not a boolean. A `Health$stVal` is an INS, a `dirGeneral` is
+# an enumeration. None of them can be read with `int(bool(x))` -- and py61850
+# hands a Dbpos back as the STRING "10", whose `bool()` is True even for
+# "00", which means a breaker painted closed for ever.
 #
-# Estes DA so' entram no mapa acompanhados da regra que diz quais bits o valor
-# carrega (ver `parse_saddr`). Medido no corpus (SCD do projeto + os 345 ICD
-# de fabrica): sao exatamente estas as (DO, DA) que recebem endereco decorado,
-# e NENHUM dos 127.225 enderecos lisos cai numa delas -- ou seja, exigir a
-# regra nao tira nada de ninguem hoje, e' so' o portao que impede a leitura
-# inventada de entrar amanha.
+# These DAs enter the map only alongside the rule saying which bits the value
+# carries (see `parse_saddr`). Measured over the corpus (the project SCD plus
+# 345 factory ICDs): these are exactly the (DO, DA) pairs that get a decorated
+# address, and NONE of the 127,225 plain addresses lands on one -- so
+# requiring the rule takes nothing away today. It is the gate that stops an
+# invented reading getting in tomorrow.
 ENUM_STATUS_DAS = frozenset({
     "stVal",                                  # DPS (Pos), INS/ENS (Health, Mod, Beh)
     "dirGeneral",                             # ACD (Dir, Str)
 })
 
-# Os DO cujo `stVal` NAO e' booleano. `stVal` sozinho nao distingue um SPS
-# (`Ind01$stVal`, um bit) de um DPS ou de um INS (`Pos$stVal`, um Dbpos;
-# `Health$stVal`, um enumerado) -- quem distingue e' o DO. Sem esta lista o
-# portao de `mms_map` seria satisfeito por acidente: hoje nenhum dos 127.225
-# enderecos lisos do corpus cai num destes DO, mas "nao acontece hoje" nao e'
-# a mesma coisa que "nao pode passar". Um `Pos$stVal` sem regra lido como
-# booleano e' um disjuntor pintado fechado para sempre, e' o pior erro que
-# esta ferramenta pode cometer numa tela de comissionamento.
+# The DOs whose `stVal` is NOT boolean. `stVal` alone cannot tell an SPS
+# (`Ind01$stVal`, a bit) from a DPS or an INS (`Pos$stVal`, a Dbpos;
+# `Health$stVal`, an enumeration) -- the DO is what tells them apart. Without
+# this list the gate would be satisfied by accident: today none of the corpus's
+# 127,225 plain addresses lands on one of these DOs, but "does not happen
+# today" is not the same as "cannot get through". A `Pos$stVal` read as a
+# boolean with no rule is a breaker painted closed for ever, which is the
+# worst mistake this toolkit can make on a commissioning screen.
 ENUM_STATUS_DOS = frozenset({
     "Pos",                                    # DPC/DPS: posicao de manobra
     "Health", "Mod", "Beh", "TrBeh",          # INS/ENS: estado do IED
@@ -134,16 +134,16 @@ ENUM_STATUS_DOS = frozenset({
 
 
 def is_enum_do(do: str) -> bool:
-    """O `stVal` deste DO e' um enumerado, e nao um booleano?"""
+    """Is this DO's `stVal` an enumeration rather than a boolean?"""
     return (do or "") in ENUM_STATUS_DOS
 
 
 def is_enum_status(da) -> bool:
-    """E' um DA cujo valor pode carregar bits, mas so' com uma regra junto?
+    """Is this a DA whose value can carry bits, but only with a rule attached?
 
-    `stVal` e' os dois: o DA de um SPS booleano E o de um DPS enumerado. Quem
-    separa e' a decoracao do `sAddr`, nao o nome do DA -- por isso o portao em
-    `resolve_map` exige a regra, e nao so' este teste.
+    `stVal` is both: the DA of a boolean SPS AND that of an enumerated DPS.
+    What separates them is the `sAddr` decoration, not the DA's name -- which
+    is why the gate in the map resolver demands the rule, not just this test.
     """
     parts = da_parts(da) if isinstance(da, str) else tuple(da)
     return len(parts) == 1 and parts[0] in ENUM_STATUS_DAS
@@ -160,13 +160,13 @@ def da_rank(da, decorated: bool = False) -> tuple:
     `samples/substation_demo.scd`: `LOCSTA` and 86 other bits of the IED
     `QPC1_LT2_UPC1` resolved to `Oper.ctlVal` under a plain first-wins.
 
-    `decorated` opens a degrau BETWEEN the boolean tier and the rest, and it
-    has to exist: um `Pos$stVal` decorado e um `Ind04$stVal` liso sao os dois
-    `is_boolean_status`, entao sem ele o desempate entre os dois voltaria a
-    ser ordem de documento. Medido em `QPC1_LT1_UPC1`: 10 dos 33 nomes
-    decorados tambem tem endereco liso. O degrau e' `(0, 1)` e nao um tier
-    novo de propósito -- renumerar `(1,)` e `(2,)` mexeria em quem ja compara
-    contra eles.
+    `decorated` opens a step BETWEEN the boolean tier and the rest, and it
+    has to exist: a decorated `Pos$stVal` and a plain `Ind04$stVal` are both
+    `is_boolean_status`, so without it the tie between them would go back to
+    document order. Measured on `QPC1_LT1_UPC1`: 10 of the 33 decorated names
+    also have a plain address. The step is `(0, 1)` rather than a new tier on
+    purpose -- renumbering `(1,)` and `(2,)` would disturb everything that
+    already compares against them.
     """
     parts = da_parts(da) if isinstance(da, str) else tuple(da)
     if parts and (parts[0] in CONTROL_DA_ROOTS
@@ -180,33 +180,34 @@ def da_rank(da, decorated: bool = False) -> tuple:
     return (1,)
 
 
-# -- a gramatica do `sAddr`: um ponto 61850 pode carregar DOIS bits ---------
+# -- the `sAddr` grammar: one 61850 point can carry TWO bits ---------------
 #
-# A SEL escreve a posicao de um disjuntor como UM ponto (`Pos$stVal`, um DPS)
-# cujo valor codifica dois bits da Relay Word:
+# SEL writes a breaker's position as ONE point (`Pos$stVal`, a DPS) whose
+# value encodes two Relay Word bits:
 #
 #     sAddr="db:52A|52B?0:1:2:3"
 #
-# As alternativas sao indexadas pela combinacao dos bits, PRIMEIRO NOME COMO
-# BIT MAIS SIGNIFICATIVO: (0,0)->0, (0,1)->1, (1,0)->2, (1,1)->3. Isso e'
-# exatamente o Dbpos da IEC 61850 -- intermediate, off, on, bad-state -- e a
-# mesma leitura reproduz `52A?1:2` (um contato auxiliar so': aberto=1,
-# fechado=2) e `RELAY_EN?5:1` (um `Mod$stVal`: off=5, on=1).
+# The alternatives are indexed by the combination of the bits, FIRST NAME AS
+# THE MOST SIGNIFICANT BIT: (0,0)->0, (0,1)->1, (1,0)->2, (1,1)->3. That is
+# exactly IEC 61850's Dbpos -- intermediate, off, on, bad-state -- and the
+# same reading covers `52A?1:2` (a single auxiliary contact: open=1, closed=2)
+# and `RELAY_EN?5:1` (a `Mod$stVal`: off=5, on=1).
 #
-# Medido no corpus inteiro -- SCD do projeto mais os 345 ICD de fabrica,
-# 132.250 enderecos `db:`: 127.225 lisos, 4.322 com um nome e 2 alternativas,
-# 703 com dois nomes e 4 alternativas. `len(alternativas) == 2**len(nomes)` em
-# 5.025 de 5.025, nunca mais de dois nomes, e as alternativas sao sempre
-# inteiros pequenos ({0,1,2,3,5}). Uma forma que quebre a invariante e' uma
-# forma que ninguem viu: `parse_saddr` devolve `None` nela em vez de chutar,
-# porque o chute aqui e' um disjuntor pintado fechado quando esta aberto.
+# Measured over the whole corpus -- the project SCD plus 345 factory ICDs,
+# 132,250 `db:` addresses: 127,225 plain, 4,322 with one name and 2
+# alternatives, 703 with two names and 4 alternatives.
+# `len(alternatives) == 2**len(names)` in 5,025 of 5,025, never more than two
+# names, and the alternatives are always small integers ({0,1,2,3,5}). A shape
+# that breaks the invariant is a shape nobody has seen: `parse_saddr` returns
+# `None` for it rather than guessing, because the guess here is a breaker
+# painted closed while it is open.
 
 _SADDR_PREFIX = "db:"
 
 
 @dataclass(frozen=True)
 class BitRule:
-    """Como tirar UM bit do valor de um ponto que carrega varios."""
+    """How to take ONE bit out of the value of a point that carries several."""
     alternatives: tuple    # valor do DA por combinacao dos bits
     index: int             # qual dos nomes e' este bit
     nbits: int             # quantos nomes o endereco tinha
@@ -214,8 +215,8 @@ class BitRule:
 
 @dataclass(frozen=True)
 class SaddrSpec:
-    """Um `sAddr="db:..."` lido: os nomes que ele enderaca e, se houver, as
-    alternativas que dizem como o valor os codifica."""
+    """One parsed `sAddr="db:..."`: the names it addresses and, when present, the
+    alternatives that say how the value encodes them."""
     names: tuple
     alternatives: tuple | None
 
@@ -228,12 +229,13 @@ class SaddrSpec:
 
 
 def parse_saddr(sa: str) -> SaddrSpec | None:
-    """`"db:52A|52B?0:1:2:3"` -> nomes `("52A", "52B")`, alternativas
-    `(0, 1, 2, 3)`. `None` no que nao for um endereco `db:` bem formado.
+    """`"db:52A|52B?0:1:2:3"` -> names `("52A", "52B")`, alternatives
+    `(0, 1, 2, 3)`. `None` for anything that is not a well-formed `db:`
+    address.
 
-    Recusar e' de proposito, e nao e' o mesmo que falhar: o chamador segue com
-    os outros milhares de enderecos do arquivo. O que nao pode acontecer e'
-    uma forma desconhecida virar leitura.
+    Refusing is deliberate, and is not the same as failing: the caller carries
+    on with the file's other thousands of addresses. What must never happen is
+    an unknown shape becoming a reading.
     """
     if not sa or not sa.startswith(_SADDR_PREFIX):
         return None
@@ -254,16 +256,18 @@ def parse_saddr(sa: str) -> SaddrSpec | None:
 
 
 def decode_bit(rule: BitRule | None, value):
-    """O valor lido do rele -> `0`/`1` para ESTE bit, ou `None` sem leitura.
+    """The value read from the relay -> `0`/`1` for THIS bit, or `None` for no
+    reading.
 
-    Duas formas chegam aqui, e as duas vem da propria py61850: um BIT-STRING
-    (o Dbpos) volta como a string `"10"`, e um INTEGER/enumerado volta como
-    `int`. Qualquer outra coisa -- e um valor que nao case com alternativa
-    nenhuma, como um Dbpos 3 (bad-state) contra um ponto `?1:2` -- e' `None`,
-    que tira o bit do payload e o deixa indeterminado no desenho. Em
-    comissionamento "nao consegui ler" e "o rele diz 0" sao coisas diferentes.
+    Two shapes arrive here, both from py61850 itself: a BIT-STRING (the Dbpos)
+    comes back as the string `"10"`, and an INTEGER or enumeration comes back
+    as an `int`. Anything else -- and any value matching no alternative, such
+    as a Dbpos 3 (bad-state) against a `?1:2` point -- is `None`, which drops
+    the bit from the payload and leaves it indeterminate on the drawing. In
+    commissioning, "I could not read it" and "the relay says 0" are different
+    statements.
 
-    Nunca levanta: mil outros bits dependem da mesma volta do polling.
+    Never raises: a thousand other bits depend on the same polling turn.
     """
     if rule is None:
         return None
@@ -300,13 +304,13 @@ class MmsTable:
 
 
 def _load_one(path: Path) -> MmsTable | None:
-    """Uma tabela, ou ``None`` se o arquivo nao servir. Nunca levanta.
+    """One table, or ``None`` if the file will not serve. Never raises.
 
-    Mesma politica que `core.wordbits` e `core.relay_models` ja escreviam nos
-    seus proprios loaders: um arquivo ruim nao pode derrubar o registro
-    inteiro. Aqui isso vale ainda mais, porque este registro e' consultado no
-    caminho do CONECTAR do GLV -- um `data/mms_map/*.json` corrompido tirava
-    do ar o modo MMS de TODOS os modelos, e nao so' o do arquivo quebrado.
+    The same policy `wordbits` and `relay_models` already state in their own
+    loaders: one bad file must not take the whole registry down. It matters
+    more here, because this registry is consulted on the connect path -- one
+    corrupt `mms_map/*.json` used to take MMS mode off the air for EVERY
+    model, not just the one the broken file described.
     """
     try:
         raw = json.loads(path.read_text(encoding="utf-8"))
@@ -333,8 +337,8 @@ def _load() -> dict:
                 table = _load_one(path)
                 if table is None:
                     continue
-                # Overlay primeiro: um (part, group) ja' preenchido nao e'
-                # substituido pela tabela empacotada.
+                # Overlay first: a (part, group) already filled is not
+                # replaced by the packaged table.
                 _CACHE.setdefault(table.part, {}).setdefault(table.group, table)
         _LOADED = True
         return _CACHE

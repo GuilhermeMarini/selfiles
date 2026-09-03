@@ -31,23 +31,23 @@ def _loaded():
 
 @pytest.mark.parametrize("model", FAMILIA_4XX)
 def test_the_4xx_family_derives_the_automation_timer_bit(model):
-    """ACNDTIMER é o gêmeo de automação do PCNDTIMER, e o bit é ACTnnQ.
+    """ACNDTIMER is PCNDTIMER's automation twin, and its bit is ACTnnQ.
 
-    Medido: `type="ACNDTIMER"` aparece nos GLE de 411L, 451 e 487E, com
-    physical_instance_name ACT01.., e a Relay Word do SEL-411L-A-R133 e do
-    SEL-451-5-R331 traz ACT01Q..ACT32Q.
+    Measured: `type="ACNDTIMER"` appears in the GLE files of the 411L, 451 and
+    487E, with physical_instance_name ACT01.., and the Relay Word of an
+    SEL-411L-A-R133 and an SEL-451-5-R331 carries ACT01Q..ACT32Q.
     """
     m = rm.lookup(model)
     assert m is not None, model
     assert m.derived_bit_for("ACNDTIMER", 1) == "ACT01Q"
     assert m.derived_bit_for("ACNDTIMER", 12) == "ACT12Q"
-    # E o de proteção continua onde estava.
+    # And the protection one is still where it was.
     assert m.derived_bit_for("PCNDTIMER", 1) == "PCT01Q"
 
 
 @pytest.mark.parametrize("model", FAMILIA_4XX)
 def test_the_automation_timer_is_shaped_like_the_protection_one(model):
-    """É uma cópia do PCT: mesmo desenho, mesmas portas, só o bit muda."""
+    """It is a copy of the PCT: same drawing, same ports, only the bit differs."""
     m = rm.lookup(model)
     pct = m.blocks["PCNDTIMER"]
     act = m.blocks["ACNDTIMER"]
@@ -61,11 +61,12 @@ def test_the_automation_timer_is_shaped_like_the_protection_one(model):
 
 @pytest.mark.parametrize("model", FAMILIA_4XX)
 def test_a_latch_bit_has_no_q_suffix(model):
-    """PLTnn/ALTnn, e não PLTnnQ/ALTnnQ.
+    """PLTnn/ALTnn, not PLTnnQ/ALTnnQ.
 
-    O Q é dos timers e contadores. O perfil do 411L tinha o ALT com o desenho
-    e o bit do timer copiados por engano (`ALTnnQ`, entradas in/PU/DO), então
-    pedia ao relé um bit que não existe e o latch de automação nunca acendia.
+    The Q belongs to the timers and counters. The 411L profile had the ALT
+    carrying the timer's drawing and bit by mistake (`ALTnnQ`, with in/PU/DO
+    inputs), so it asked the relay for a bit that does not exist and an
+    automation latch never lit up.
     """
     m = rm.lookup(model)
     assert m.derived_bit_for("PLT", 3) == "PLT03"
@@ -73,15 +74,15 @@ def test_a_latch_bit_has_no_q_suffix(model):
     assert m.blocks["ALT"].input_sublabels == ("S", "R")
 
 
-# -- um tipo de XML, um dono ------------------------------------------------
+# -- one XML type, one owner ------------------------------------------------
 
 def test_no_profile_has_two_blocks_claiming_the_same_xml_type(caplog):
-    """Dois blocos com o mesmo `gle_xml_type` fazem um deles perder.
+    """Two blocks claiming one `gle_xml_type` means one of them loses.
 
-    O 487E declarava `["ALT", "LATCH"]` e `["PLT", "LATCH"]`: o último definido
-    vencia, então num GLE que escrevesse o tipo genérico LATCH todo latch de
-    proteção viraria ALTnn. Medido no acervo: nenhum GLE de 4xx escreve LATCH
-    ou TIMER genéricos -- isso é dialeto de 3xx/2xxx/7xx.
+    The 487E declared both `["ALT", "LATCH"]` and `["PLT", "LATCH"]`: the last
+    definition won, so in a GLE writing the generic LATCH type every
+    protection latch would have become ALTnn. Measured across the corpus: no
+    4xx GLE writes a generic LATCH or TIMER -- that is 3xx/2xxx/7xx dialect.
     """
     for path in sorted(RELAY_MODELS_DIR.glob("*.json")):
         data = json.loads(path.read_text(encoding="utf-8"))
@@ -98,7 +99,7 @@ def test_no_profile_has_two_blocks_claiming_the_same_xml_type(caplog):
                 )
                 dono[t.upper()] = key
 
-    # E o loader concorda: recarregar não pode acender o aviso de colisão.
+    # And the loader agrees: reloading must not raise the collision warning.
     with caplog.at_level(logging.WARNING, logger=rm.__name__):
         rm.load_relay_models(force=True)
     assert "mapeado por" not in caplog.text
@@ -114,8 +115,8 @@ def test_the_451_is_found_by_the_relaytype_the_rdbs_carry():
 
 
 def test_the_451_reads_its_identifiers_where_the_4xx_keeps_them():
-    """Medido nos 451 do acervo: IPADDR em SET_P5.TXT, RID em SET_G1.TXT,
-    e nenhum SET_*.TXT com MAC (é hardware)."""
+    """Measured on the 451s in the corpus: IPADDR in SET_P5.TXT, RID in
+    SET_G1.TXT, and no SET_*.TXT carrying a MAC -- that is hardware."""
     m = rm.lookup("SEL-451-5")
     assert (m.ip_address_file or "").lower() == "set_p5.txt"
     assert m.ip_address_key == "IPADDR"
@@ -123,7 +124,7 @@ def test_the_451_reads_its_identifiers_where_the_4xx_keeps_them():
     assert (m.relay_id.file or "").lower() == "set_g1.txt"
     assert m.relay_id.key == "RID"
     assert m.mac_address is None
-    # 4xx: a Relay Word sai da região TARGET, não do Fast Meter.
+    # On a 4xx the Relay Word comes from the TARGET region, not Fast Meter.
     assert m.fast_read == "target_region"
 
 
@@ -140,7 +141,7 @@ def test_the_451_derives_the_bits_its_relay_word_really_has():
         ("AST", 1): "AST01Q",
         ("PST", 1): "PST01Q",
         ("PSV", 1): "PSV01",
-        # ASV tem TRÊS dígitos (ASV001..ASV256), ao contrário do PSV.
+        # ASV takes THREE digits (ASV001..ASV256), unlike PSV.
         ("ASV", 7): "ASV007",
     }
     for (xml_type, inst), bit in esperado.items():
@@ -148,29 +149,29 @@ def test_the_451_derives_the_bits_its_relay_word_really_has():
 
 
 def test_the_451_knows_both_current_banks_are_analog():
-    """O 451 tem dois bancos de corrente, W e X. O perfil do 411L só cobre
-    `^I[ABC]W$` e deixaria IAX/IBX/ICX passarem por bit da Relay Word."""
+    """The 451 has two current banks, W and X. The 411L profile covers only
+    `^I[ABC]W$` and would let IAX/IBX/ICX pass as Relay Word bits."""
     m = rm.lookup("SEL-451-5")
     for nome in ("IAW", "IBW", "ICW", "IAX", "IBX", "ICX"):
         assert m.is_analog_symbol(nome), nome
         assert m.analog_group_for(nome).key == "WND"
     for nome in ("AMV001", "VABRMS", "VAY", "VCZ"):
         assert m.is_analog_symbol(nome), nome
-    # E um bit continua sendo um bit.
+    # And a bit is still a bit.
     for nome in ("PCT01Q", "ACT01Q", "T1_LED"):
         assert not m.is_analog_symbol(nome), nome
 
 
 def test_the_451_speaks_the_explicit_4xx_dialect():
-    """Medido: os GLE de 451 escrevem PLT/PCNDTIMER/AST explícitos e nunca os
-    tipos genéricos TIMER/LATCH/COUNTER (esses são de 3xx/2xxx/7xx)."""
+    """Measured: the 451's GLE files write PLT/PCNDTIMER/AST explicitly and never
+    the generic TIMER/LATCH/COUNTER types, which belong to the 3xx/2xxx/7xx."""
     m = rm.lookup("SEL-451-5")
     for generico in ("TIMER", "LATCH", "COUNTER"):
         assert generico not in m.blocks_by_xml_type, generico
 
 
 def test_every_shipped_profile_still_loads():
-    """Um JSON quebrado some em silêncio: `_load_one` engole o erro e loga."""
+    """A broken JSON disappears quietly: `_load_one` swallows the error and logs."""
     nomes = {p.stem for p in RELAY_MODELS_DIR.glob("*.json")}
     for nome in nomes:
         assert rm.lookup(nome) is not None, nome

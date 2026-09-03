@@ -1,7 +1,7 @@
 """
-Leitura de arquivos SCD (IEC 61850 Substation Configuration Description).
+Read an SCD (IEC 61850 Substation Configuration Description).
 
-Um SCD eh um XML com a estrutura:
+An SCD is XML with this shape:
 
     <SCL>
       <Communication>
@@ -19,16 +19,16 @@ Um SCD eh um XML com a estrutura:
       ...
     </SCL>
 
-Este modulo extrai por IED os campos uteis pra cruzar com um RDB:
+Per IED, this module extracts the fields worth cross-matching against an RDB:
   - name           (iedName / IED@name)
-  - ip             (primeiro ConnectedAP do IED com <P type="IP">)
-  - relay_type     (atributo `type` do <IED>, ex.: "SEL_487E")
-  - manufacturer   (atributo `manufacturer` do <IED>, ex.: "SEL")
-  - description    (atributo `desc` do <IED>)
-  - config_version (atributo `configVersion`)
+  - ip             (the IED's first ConnectedAP carrying <P type="IP">)
+  - relay_type     (the <IED> `type` attribute, e.g. "SEL_487E")
+  - manufacturer   (the <IED> `manufacturer` attribute, e.g. "SEL")
+  - description    (the <IED> `desc` attribute)
+  - config_version (the `configVersion` attribute)
 
-O parsing usa `xml.etree.ElementTree` namespace-aware. Falha graciosamente
-em XML invalido (retorna lista vazia + log).
+Parsing is namespace-aware `xml.etree.ElementTree`, and fails gracefully on
+invalid XML: an empty list and a log line, never an exception.
 """
 
 from __future__ import annotations
@@ -49,7 +49,7 @@ _NS = {"scl": _SCL_NS}
 
 @dataclass(frozen=True)
 class IedInfo:
-    """Snapshot de um IED como ele aparece no SCD."""
+    """A snapshot of one IED, as the SCD describes it."""
     name: str
     ip: str | None
     relay_type: str | None
@@ -64,8 +64,8 @@ def _strip_ns(tag: str) -> str:
 
 
 def _iter_local(root: ET.Element, local_name: str):
-    """Itera elementos com nome local == local_name, ignorando o namespace.
-    Util porque alguns SCDs gerados manualmente nao declaram namespace.
+    """Iterate elements whose local name is `local_name`, ignoring the
+    namespace. Necessary because some hand-made SCDs declare none.
     """
     for el in root.iter():
         if _strip_ns(el.tag) == local_name:
@@ -73,7 +73,7 @@ def _iter_local(root: ET.Element, local_name: str):
 
 
 def _collect_ip_by_ied(root: ET.Element) -> dict[str, str]:
-    """Le <Communication> e retorna {iedName: primeiro IP encontrado}."""
+    """Read <Communication> and return {iedName: the first IP found}."""
     out: dict[str, str] = {}
     for ap in _iter_local(root, "ConnectedAP"):
         ied = ap.attrib.get("iedName") or ap.attrib.get("iedname")
@@ -88,9 +88,9 @@ def _collect_ip_by_ied(root: ET.Element) -> dict[str, str]:
 
 
 def load_scd(scd_path: Path) -> list[IedInfo]:
-    """Parsa um SCD e retorna a lista de IEDs com seus campos identificadores.
+    """Parse an SCD and return its IEDs with their identifying fields.
 
-    Retorna lista vazia (com log) em caso de erro de IO/parsing.
+    Returns an empty list, and logs, on any IO or parsing error.
     """
     p = Path(scd_path)
     if not p.is_file():
@@ -122,8 +122,8 @@ def load_scd(scd_path: Path) -> list[IedInfo]:
 
 
 def index_by_ip(ieds: list[IedInfo]) -> dict[str, IedInfo]:
-    """{ip -> IedInfo} (apenas IEDs com IP). Em caso de IP duplicado, o
-    primeiro vence -- duplicidades sao logadas como warning.
+    """{ip -> IedInfo}, for the IEDs that have an IP. On a duplicate address the
+    first wins, and the duplicate is logged as a warning.
     """
     out: dict[str, IedInfo] = {}
     for ied in ieds:
@@ -150,10 +150,10 @@ def index_by_name(ieds: list[IedInfo]) -> dict[str, IedInfo]:
 
 @dataclass(frozen=True)
 class GseAddress:
-    """Endereco GOOSE de um <GSE> sob <ConnectedAP iedName=...>.
+    """The GOOSE address of one <GSE> under <ConnectedAP iedName=...>.
 
-    Identifica univocamente um GOOSE Control Block via (publisher_ied, ld_inst,
-    cb_name). Os campos de Address vem do bloco <Address><P type=...>.
+    Identifies a GOOSE Control Block uniquely by (publisher_ied, ld_inst,
+    cb_name). The address fields come from the <Address><P type=...> block.
     """
     publisher_ied: str          # iedName do <ConnectedAP> que contem o <GSE>
     ld_inst: str                # atributo `ldInst` do <GSE>
@@ -166,11 +166,12 @@ class GseAddress:
 
 @dataclass(frozen=True)
 class GooseSubscription:
-    """Uma assinatura de GOOSE feita por um IED (um <ExtRef serviceType="GOOSE">).
+    """One GOOSE subscription made by an IED (an <ExtRef serviceType="GOOSE">).
 
-    Aponta pro GOOSE Control Block (publisher_ied, src_ld_inst, src_cb_name).
-    Pode ou nao resolver pra um GseAddress no <Communication> -- subscricoes
-    sem GSE correspondente sao mantidas com `address=None` pra diagnostico.
+    Points at the GOOSE Control Block (publisher_ied, src_ld_inst,
+    src_cb_name). It may or may not resolve to a GseAddress in
+    <Communication> -- a subscription with no matching GSE is kept, so the
+    mismatch can be reported rather than lost.
     """
     publisher_ied: str
     src_ld_inst: str
@@ -180,16 +181,16 @@ class GooseSubscription:
 
 
 def _gse_key(publisher_ied: str, ld_inst: str, cb_name: str) -> tuple[str, str, str]:
-    """Chave canonica de um GOOSE Control Block."""
+    """The canonical key of a GOOSE Control Block."""
     return (publisher_ied, ld_inst, cb_name)
 
 
 def extract_gse_communication_map(scd_path: Path) -> dict[tuple[str, str, str], GseAddress]:
-    """Le um SCD e retorna {(publisher_ied, ld_inst, cb_name): GseAddress}.
+    """Read an SCD and return {(publisher_ied, ld_inst, cb_name): GseAddress}.
 
-    Cada <GSE ldInst=... cbName=...> sob <ConnectedAP iedName=...> vira uma
-    entrada com seu MAC/APPID/VLAN-ID/VLAN-PRIORITY (campos opcionais ficam
-    None quando ausentes).
+    Every <GSE ldInst=... cbName=...> under a <ConnectedAP iedName=...>
+    becomes one entry, with its MAC/APPID/VLAN-ID/VLAN-PRIORITY. An absent
+    optional field is None.
     """
     p = Path(scd_path)
     out: dict[tuple[str, str, str], GseAddress] = {}
@@ -231,16 +232,16 @@ def extract_gse_communication_map(scd_path: Path) -> dict[tuple[str, str, str], 
 def extract_goose_subscriptions_by_ied(
     scd_path: Path,
 ) -> dict[str, list[GooseSubscription]]:
-    """Le um SCD e retorna {ied_name: [GooseSubscription, ...]}.
+    """Read an SCD and return {ied_name: [GooseSubscription, ...]}.
 
-    Para cada <IED>, pega todos os <ExtRef serviceType="GOOSE"> que tenham
-    `iedName` (publisher) e `srcCBName` (control block) preenchidos. ExtRefs
-    sem publisher/cb sao ignorados (sao templates vazios, comuns em SCDs
-    exportados antes de algumas conexoes serem fechadas).
+    For each <IED>, take every <ExtRef serviceType="GOOSE"> that has both
+    `iedName` (the publisher) and `srcCBName` (the control block) filled in.
+    An ExtRef missing either is ignored: those are empty templates, common in
+    an SCD exported before every connection was made.
 
-    Subscricoes duplicadas para o mesmo (publisher, ldInst, cbName) sao
-    deduplicadas (mantemos a primeira ocorrencia -- as outras sao apenas
-    intAddrs adicionais do mesmo dataset).
+    Duplicate subscriptions to the same (publisher, ldInst, cbName) are
+    collapsed, keeping the first -- the others are just further intAddrs of
+    the same dataset.
     """
     p = Path(scd_path)
     out: dict[str, list[GooseSubscription]] = {}
@@ -266,7 +267,7 @@ def extract_goose_subscriptions_by_ied(
             pub = (ext.attrib.get("iedName") or "").strip()
             cb = (ext.attrib.get("srcCBName") or "").strip()
             if not pub or not cb:
-                # Template/placeholder ExtRef -- nao representa uma assinatura real.
+                # A template or placeholder ExtRef: not a real subscription.
                 continue
             ld = (ext.attrib.get("srcLDInst") or "").strip()
             key = _gse_key(pub, ld, cb)
@@ -285,28 +286,30 @@ def extract_goose_subscriptions_by_ied(
     return out
 
 
-# -- sAddr: o nome da Relay Word dentro do SCL ------------------------------
+# -- sAddr: the Relay Word's name, inside the SCL --------------------------
 #
-# A SEL grava o nome do bit em `sAddr="db:NOME"` no DAI. Esse atributo e' de
-# SCL e o rele NAO o serve por MMS, entao esta e' a unica ponte entre o nome
-# que o GLE desenha e o item MMS que o rele responde.
+# SEL writes the bit's name as `sAddr="db:NAME"` on the DAI. That attribute
+# belongs to SCL and the relay does NOT serve it over MMS, so this is the only
+# bridge between the name the GLE draws and the MMS item the relay answers to.
 #
-# O FC nao esta aqui: ele mora no DA do DOType, dentro de DataTypeTemplates.
-# Nao resolvemos essa cadeia -- quem da o FC e' o proprio rele, casando
-# `LN$*$DO$DA` contra o GetLogicalDeviceDirectory. Ver `web/glv/mms_map.py`.
+# The FC is not here: it lives on the DA of the DOType, inside
+# DataTypeTemplates. This module does not resolve that chain -- on the live
+# path the relay itself gives the FC, by matching `LN$*$DO$DA` against
+# GetLogicalDeviceDirectory.
 
 @dataclass(frozen=True)
 class ScdPoint:
-    """Onde um bit da Relay Word mora no modelo 61850, menos o FC."""
+    """Where a Relay Word bit lives in the 61850 model -- everything but the FC."""
     bit: str
     ld_inst: str
     ln: str          # prefix + lnClass + inst, como o MMS soletra
     do: str
     da: str          # 'stVal', ou 'Oper.ctlVal' quando vem de um SDI
-    # Como tirar ESTE bit do valor do ponto, quando o ponto carrega mais de um
-    # (`sAddr="db:52A|52B?0:1:2:3"` num DPS). `None` num endereco liso, que e'
-    # a esmagadora maioria -- 127.225 dos 132.250 do corpus. Ver
-    # `mms_tables.parse_saddr` / `mms_tables.decode_bit`.
+    # How to take THIS bit out of the point's value, when the point carries
+    # more than one (`sAddr="db:52A|52B?0:1:2:3"` on a DPS). `None` for a
+    # plain address, which is the overwhelming majority -- 127,225 of the
+    # corpus's 132,250. See `mms_tables.parse_saddr` and
+    # `mms_tables.decode_bit`.
     rule: object | None = None
 
 
@@ -318,7 +321,7 @@ def _ln_name(ln: ET.Element) -> str:
 
 
 def _walk_dais(node: ET.Element, trail: list):
-    """Rende (caminho_do_da, elemento) para cada DAI sob um DOI, entrando em SDI."""
+    """Yield (da_path, element) for every DAI under a DOI, descending into SDI."""
     for child in node:
         tag = _strip_ns(child.tag)
         if tag == "DAI":
@@ -330,10 +333,10 @@ def _walk_dais(node: ET.Element, trail: list):
 def _type_index(root: ET.Element) -> tuple:
     """`DataTypeTemplates` -> (`{lnType: {DO: DOType}}`, `{DOType: {DA: fc}}`).
 
-    So' os `DA` de PRIMEIRO nivel entram no segundo indice: o FC mora ali. Um
-    `Oper.ctlVal` herda o `CO` do proprio `Oper`, que e' como a IEC 61850
-    define -- o functional constraint e' do DA raiz, e o que desce por dentro
-    dele desce junto.
+    Only FIRST-level `DA`s go into the second index, because that is where the
+    FC lives. An `Oper.ctlVal` inherits the `CO` of `Oper` itself, which is
+    how IEC 61850 defines it: the functional constraint belongs to the root
+    DA, and everything descending inside it comes along.
     """
     dos_by_lntype: dict = {}
     fcs_by_dotype: dict = {}
@@ -350,20 +353,21 @@ def _type_index(root: ET.Element) -> tuple:
 
 
 def sel_da_fcs(scd_path: Path) -> dict:
-    """`{IED: {(ld_inst, ln, do, da): fc}}`, resolvido nos DataTypeTemplates.
+    """`{IED: {(ld_inst, ln, do, da): fc}}`, resolved through DataTypeTemplates.
 
-    O caminho VIVO nao usa isto e nao deve usar: la o FC vem do proprio rele,
-    casando `LN$*$DO$DA` contra o `GetLogicalDeviceDirectory`, o que resolve o
-    FC e confere a entrada de uma vez so' (ver `web/glv/mms_map.py`).
+    The LIVE path does not use this and must not: there the FC comes from the
+    relay itself, matching `LN$*$DO$DA` against `GetLogicalDeviceDirectory`,
+    which resolves the FC and verifies the entry in one step.
 
-    Aqui nao ha' rele: a tabela de fabrica em `data/mms_map/` e' gerada
-    offline a partir dos ICD, e o item precisa do FC gravado dentro dele.
-    Medido nos 146 ICD do corpus, os 2.030 enderecos decorados caem todos em
-    `ST` -- resolver mesmo assim, em vez de gravar `ST` na marra, e' o que faz
-    um ICD futuro que discorde falhar alto em vez de gerar um item errado.
+    Here there is no relay: the factory table is generated offline from the
+    ICDs, and the item needs its FC baked in. Measured over the corpus's 146
+    ICDs, all 2,030 decorated addresses land on `ST` -- resolving anyway,
+    rather than hardcoding `ST`, is what makes a future ICD that disagrees
+    fail loudly instead of producing a wrong item.
 
-    Um DA que nao resolve fica FORA do dicionario. Chutar um FC produz um item
-    que o rele nao serve, e ai o bit some calado la' na frente.
+    A DA that does not resolve stays OUT of the dictionary. Guessing an FC
+    produces an item the relay does not serve, and then the bit disappears in
+    silence much further downstream.
     """
     root = ET.parse(scd_path).getroot()
     dos_by_lntype, fcs_by_dotype = _type_index(root)
@@ -379,8 +383,8 @@ def sel_da_fcs(scd_path: Path) -> dict:
                     do = doi.get("name") or ""
                     by_da = fcs_by_dotype.get(dos.get(do), {})
                     for da_path, _dai in _walk_dais(doi, []):
-                        # O FC e' do DA RAIZ: `Oper.ctlVal` e' `CO` porque
-                        # `Oper` e' `CO`.
+                        # The FC belongs to the ROOT DA: `Oper.ctlVal` is
+                        # `CO` because `Oper` is `CO`.
                         fc = by_da.get(da_path.split(".")[0])
                         if fc:
                             fcs[(ld_inst, ln_name, do, da_path)] = fc
@@ -389,30 +393,30 @@ def sel_da_fcs(scd_path: Path) -> dict:
 
 
 def sel_short_addresses(scd_path: Path) -> dict:
-    """`{nome_do_IED: {NOME_DO_BIT: ScdPoint}}` para todo sAddr="db:...".
+    """`{ied_name: {BIT_NAME: ScdPoint}}` for every sAddr="db:...".
 
-    Um nome aparece varias vezes no mesmo IED: o mesmo bit sai no `stVal` do
-    lado ST e no `Oper.ctlVal` do lado CO, por exemplo. Quem fica e' o de
-    MENOR `da_rank` -- status booleano primeiro, status enumerado DECORADO
-    depois, comando por ultimo -- e o primeiro da ordem do documento
-    desempata.
+    One name appears several times within an IED: the same bit shows up as
+    `stVal` on the ST side and as `Oper.ctlVal` on the CO side, for instance.
+    The one that stays is the one with the LOWEST `da_rank` -- boolean status
+    first, DECORATED enumerated status next, a command last -- with document
+    order breaking a tie.
 
-    Nao da' pra deixar isso pro `fc_rank` mais adiante: ele escolhe entre FCs
-    de UM MESMO da, e nesse ponto o candidato de status ja' teria sido
-    jogado fora. Medido em `samples/substation_demo.scd`: com o first-wins
-    puro, `LOCSTA` e `IPRST` (entre 87 pontos do IED `QPC1_LT2_UPC1`)
-    resolviam pro `CFG/LLN0.LocSta.Oper.ctlVal`, ou seja, o GLV leria o
-    comando em vez do estado.
+    This cannot be left to `fc_rank` further downstream: that one chooses
+    between the FCs of ONE DA, and by then the status candidate would already
+    have been thrown away. Measured on the reference SCD: under a plain
+    first-wins, `LOCSTA` and `IPRST` (among 87 points of one IED) resolved to
+    `CFG/LLN0.LocSta.Oper.ctlVal` -- so a viewer would read the command
+    instead of the state.
 
-    Um `sAddr` pode enderecar DOIS bits num ponto so' -- `db:52A|52B?0:1:2:3`
-    num `Pos$stVal`, cujo Dbpos codifica os dois contatos auxiliares. Cada
-    nome vira um `ScdPoint` proprio, com a `rule` que diz como tirar o seu bit
-    do valor lido; a gramatica e a invariante `len(alt) == 2**len(nomes)` vivem
-    em `mms_tables.parse_saddr`, e uma forma que a quebre e' descartada em vez
-    de chutada. Antes disto a chave virava a string literal
-    `52A|52B?0:1:2:3` e a forma inteira sumia calada: 55 dos 7.524 bits
-    desenhados dos 25 reles da subestacao, todos posicao de disjuntor ou de
-    seccionadora.
+    One `sAddr` can address TWO bits in a single point -- `db:52A|52B?0:1:2:3`
+    on a `Pos$stVal`, whose Dbpos encodes both auxiliary contacts. Each name
+    becomes its own `ScdPoint`, carrying the `rule` that says how to take its
+    bit out of the value read. The grammar, and the invariant
+    `len(alt) == 2**len(names)`, live in `mms_tables.parse_saddr`, and a shape
+    that breaks it is discarded rather than guessed. Before that the key
+    became the literal string `52A|52B?0:1:2:3` and the whole form vanished in
+    silence: 55 of the 7,524 bits drawn across a substation's 25 relays, every
+    one of them a breaker or disconnector position.
     """
     root = ET.parse(scd_path).getroot()
     out: dict = {}

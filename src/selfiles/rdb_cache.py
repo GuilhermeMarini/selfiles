@@ -1,24 +1,25 @@
-"""Cache de extracao de RDB chaveado pelo conteudo.
+"""RDB extraction cache, keyed by content.
 
-Antes cada sessao guardava a propria copia do RDB (40-140 MB) e a propria
-extracao, porque `process_upload` chaveava por NOME dentro do `base_dir` de
-cada ferramenta. Como dois arquivos com o mesmo sha256 SAO o mesmo arquivo, a
-extracao passou a morar em `cache/rdb/<sha256>/`, unica no processo:
+Each session used to keep its own copy of the RDB (40-140 MB) and its own
+extraction, because the upload was keyed by NAME inside each tool's own base
+directory. Since two files with the same sha256 ARE the same file, the
+extraction moved to one directory per content hash:
 
-    cache/rdb/<sha256>/source.rdb
-    cache/rdb/<sha256>/extracted/Relays/...
-    cache/rdb/<sha256>/meta.json
+    <cache>/<sha256>/source.rdb
+    <cache>/<sha256>/extracted/Relays/...
+    <cache>/<sha256>/meta.json
 
-`meta.json` so e' escrito DEPOIS que a extracao termina. Entrada sem ele e'
-extracao interrompida (kill -9, disco cheio) e e' refeita -- e' o que substitui
-a comparacao de hash do arquivo em disco que existia antes.
+`meta.json` is written only AFTER the extraction finishes. An entry without it
+is an interrupted extraction (kill -9, a full disk) and gets redone -- that is
+what replaced the on-disk hash comparison this module used to do.
 
-O nome que o usuario ve nao mora aqui: cada sessao carrega o seu em
-`RdbInfo.display_name`, senao todo mundo veria o nome de quem subiu primeiro.
+The name a user sees does not live here: each session carries its own in
+`RdbInfo.display_name`, or everyone would see whichever name was uploaded
+first.
 
-Diferente de `cache/sessions/`, este diretorio NAO e' apagado no boot --
-sobreviver ao restart e' o motivo dele existir. Em troca, ele nao tem dono e
-cresceria pra sempre, entao `sweep()` roda junto com o sweeper das sessoes.
+Unlike a per-session directory, this one is NOT wiped at start-up -- surviving
+a restart is the reason it exists. In exchange it has no owner and would grow
+forever, so `sweep()` is meant to run on a schedule.
 """
 
 from __future__ import annotations
@@ -35,15 +36,16 @@ from selfiles import _paths
 
 _SHA_RE = re.compile(r"^[0-9a-f]{64}$")
 
-# Uma trava por hash: dois visitantes subindo o mesmo RDB ao mesmo tempo
-# extraiam por cima um do outro. O segundo espera e reaproveita.
+# One lock per hash: two callers extracting the same RDB at the same time
+# used to write over each other. The second waits and reuses the result.
 _LOCKS: dict[str, threading.Lock] = {}
 _LOCKS_GUARD = threading.Lock()
 
 
 @dataclass(frozen=True)
 class CacheEntry:
-    """Uma extracao no cache. Os caminhos sao derivados do hash, nunca do nome."""
+    """One extraction in the cache. Every path derives from the hash, never from
+    the file name."""
 
     sha256: str
     root: Path
@@ -67,7 +69,7 @@ class CacheEntry:
 
 
 def entry_for(sha256: str, root: Path | None = None) -> CacheEntry:
-    """Entrada do cache pra esse conteudo. `root` troca a raiz (uso fora da web)."""
+    """The cache entry for this content. `root` overrides the cache root."""
     if not _SHA_RE.match(sha256 or ""):
         raise ValueError(f"sha256 invalido: {sha256!r}")
     base = Path(root) if root is not None else _paths.cache_dir()
@@ -108,7 +110,8 @@ def write_meta(entry: CacheEntry, display_name: str, n_relays: int) -> None:
     entry.meta_path.write_text(json.dumps({
         "version": 1,
         "sha256": entry.sha256,
-        # So pra inspecao humana: o nome que aparece na tela vem de quem subiu.
+        # For human inspection only: the name shown on screen comes from
+        # whoever uploaded it, not from here.
         "first_name": display_name,
         "relays": n_relays,
         "created": now,
@@ -148,23 +151,23 @@ def _dir_size(p: Path) -> int:
     return total
 
 
-#: Uploads em andamento (`process_upload_stream` grava aqui antes de conhecer
-#: o sha256). Nao casa `_SHA_RE`, entao a varredura de entradas ignora.
+#: Uploads in flight (`process_upload_stream` writes here before the sha256
+#: is known). It does not match `_SHA_RE`, so the entry scan skips it.
 INCOMING_DIRNAME = "_incoming"
 
-#: Um upload de 500 MB numa rede de subestacao nao passa disso. Um `.rdb-part`
-#: mais velho que isso e' de um processo que morreu no meio.
+#: A 500 MB upload over a substation network does not take longer than this.
+#: A `.rdb-part` older than that belongs to a process that died mid-transfer.
 _INCOMING_MAX_AGE = 6 * 3600
 
 
 def _sweep_incoming(base: Path, now: float, logger) -> int:
-    """Apaga restos de upload interrompido.
+    """Delete what an interrupted upload left behind.
 
-    `process_upload_stream` limpa o proprio temporario num `finally`, o que
-    cobre erro e desconexao. O que ele nao cobre e' `kill -9`, OOM ou queda de
-    energia no meio do recebimento -- e diferente de `cache/sessions/`, que e'
-    apagado no boot, `cache/rdb/` sobrevive ao restart de proposito. Sem isto,
-    cada upload morto deixaria ate 500 MB parados pra sempre.
+    `process_upload_stream` removes its own temporary file in a `finally`,
+    which covers an error or a dropped connection. What it cannot cover is
+    `kill -9`, an OOM kill or a power cut mid-transfer -- and unlike a
+    per-session directory, this cache deliberately survives a restart. Without
+    this, every dead upload would strand up to 500 MB forever.
     """
     incoming = base / INCOMING_DIRNAME
     if not incoming.is_dir():
@@ -187,11 +190,12 @@ def _sweep_incoming(base: Path, now: float, logger) -> int:
 
 def sweep(logger, max_gb: float = 8.0, max_age_days: float = 30.0,
           min_age_seconds: float = 8 * 3600, root: Path | None = None) -> int:
-    """Remove entradas velhas e, se ainda passar do teto, as menos usadas.
+    """Remove stale entries and, if still over the ceiling, the least recently
+    used ones.
 
-    `min_age_seconds` e' o TTL da sessao: uma sessao viva pode nao tocar o RDB
-    por horas e ainda voltar a usa-lo, entao nada mais novo que isso sai.
-    Devolve quantas entradas foram removidas.
+    `min_age_seconds` is the host's session TTL: a live session may not touch
+    its RDB for hours and still come back to it, so nothing younger than that
+    is ever removed. Returns how many entries went.
     """
     base = Path(root) if root is not None else _paths.cache_dir()
     if not base.is_dir():

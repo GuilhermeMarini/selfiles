@@ -1,14 +1,15 @@
 """
-Gera SVG das paginas do arquivo GL1.gle (XML do AcSELerator QuickSet).
+Render the pages of a GLE file (AcSELerator QuickSet's logic diagram XML) as
+SVG.
 
-Cada pagina vira um SVG com:
-  - Caixas para SYMBOLs (entrada/saida/Relay Word bit)
-  - Formas para portas logicas (AND, OR, NOT, PLT, ...)
-  - Polylines para conexoes
-  - Cada SYMBOL com data-attr para colorir via JavaScript com valores ao vivo
+Each page becomes one SVG with:
+  - boxes for SYMBOLs (an input, an output, or a Relay Word bit)
+  - shapes for the logic blocks (AND, OR, NOT, PLT, ...)
+  - polylines for the connections
+  - a data attribute on every SYMBOL, so a live overlay can colour it
 
-Uso:
-    python3 gle_to_svg.py /caminho/GL1.gle.xml [--page "TRIP"]
+Usage:
+    python3 -m selfiles.gle /path/to/GL1.gle.xml [--page "TRIP"]
 """
 
 from __future__ import annotations
@@ -24,10 +25,10 @@ from pathlib import Path
 PORT_SPACING = 12
 PORT_BOT_PAD = 6     # padding apos a ultima porta
 
-# Offset da PRIMEIRA porta em relacao ao `top` do elemento (em px).
-# Esses valores foram medidos diretamente nas conexoes do GLE -- elementos
-# "altos" como PLT e PCNDTIMER tem uma header row pro label, entao a primeira
-# porta fica 2 grades abaixo (24px); ja AND/OR usam 1 grade (12px).
+# Offset of the FIRST port from the element's `top`, in px. These values were
+# measured directly from the GLE's own connections: "tall" elements such as
+# PLT and PCNDTIMER carry a header row for the label, so their first port sits
+# two grid steps down (24px), while AND/OR use one (12px).
 PORT_FIRST_OFFSET = {
     "AND": 12, "OR": 12, "NOT": 12, "MULT": 12,
     "EQ": 12, "NE": 12, "LT": 12, "LE": 12, "GT": 12, "GE": 12,
@@ -41,9 +42,9 @@ PORT_FIRST_OFFSET = {
 }
 DEFAULT_FIRST_OFFSET = 12
 
-# Tamanho minimo (largura, altura) por tipo de elemento.
-# A altura real eh ajustada para acomodar todas as portas atuais (contadas
-# a partir das conexoes da pagina).
+# Minimum (width, height) per element type. The real height is then grown to
+# fit however many ports the element actually has, counted from the page's
+# connections.
 ELEMENT_MIN_SIZE = {
     "SYMBOL": (66, 12),
     "AND": (36, 24),
@@ -72,7 +73,7 @@ ELEMENT_MIN_SIZE = {
     "Connector": (24, 12),
 }
 
-# Numero default de portas por tipo (caso a pagina nao mostre conexoes).
+# Default port count per type, for when the page shows no connections.
 DEFAULT_PORTS = {
     "SYMBOL": (1, 1),
     "AND": (2, 1),
@@ -133,9 +134,10 @@ def count_actual_ports(page: ET.Element) -> tuple[dict, dict]:
 
 def deduce_symbol_widths(page: ET.Element) -> dict[str, int]:
     """
-    Para cada SYMBOL com saida (source), deduz sua largura real a partir
-    do primeiro waypoint da conexao (que comeca na borda direita do simbolo).
-    SYMBOLs sem saida ficam sem largura aqui -- caem no fallback por texto.
+    For every SYMBOL with an output, deduce its real width from the
+    connection's first waypoint, which starts at the symbol's right edge. A
+    SYMBOL with no output gets no width here and falls back to an estimate
+    from its text.
     """
     el_left = {}
     for el in page.findall(".//element"):
@@ -147,8 +149,8 @@ def deduce_symbol_widths(page: ET.Element) -> dict[str, int]:
         if src is None:
             continue
         sid = src.get("element_id")
-        # `element_id` e um atributo do XML: pode faltar, e ai a busca no
-        # dicionario so podia dar errado.
+        # `element_id` is an XML attribute: it can be absent, and looking
+        # that up in the dictionary could only ever miss.
         if sid is None or sid not in el_left:
             continue
         pts = c.findall(".//point")
@@ -157,16 +159,17 @@ def deduce_symbol_widths(page: ET.Element) -> dict[str, int]:
         fx = int(pts[0].get("x", "0"))
         w = fx - el_left[sid]
         if 12 <= w <= 200:
-            # Pega o maior valor visto (raras vezes a 1a wp e dentro do bloco)
+            # Take the largest seen: occasionally the first waypoint falls
+            # inside the block.
             widths[sid] = max(widths.get(sid, 0), w)
     return widths
 
 
 def find_junctions(page: ET.Element) -> set[tuple[int, int]]:
     """
-    Pontos onde 3+ conexoes se encontram (T ou + junction).
-    Sao locais onde o sinal se ramifica: precisam de um dot para
-    distinguir de "linhas que apenas se cruzam".
+    Points where 3 or more connections meet (a T or + junction). The signal
+    branches there, so they need a dot to tell them apart from lines that
+    merely cross.
     """
     counts: dict[tuple[int, int], int] = defaultdict(int)
     for c in page.findall(".//connection"):
@@ -198,8 +201,8 @@ def element_info(el: ET.Element) -> dict:
     le = el.find("logic_element")
     name = ""
     alias = ""
-    # Modificadores de porta: {port_index: "NOT" | "RTRIG" | "FTRIG"} para cada
-    # grupo (inputs e outputs).
+    # Port modifiers: {port_index: "NOT" | "RTRIG" | "FTRIG"}, one map per
+    # group (inputs and outputs).
     input_mods: dict[int, str] = {}
     output_mods: dict[int, str] = {}
     # Comentarios por porta (descricao livre do sinal).
@@ -231,19 +234,19 @@ def element_info(el: ET.Element) -> dict:
         "output_mods": output_mods,
         "input_comments": input_comments,
         "output_comments": output_comments,
-        # O `<label>` e' filho DIRETO do `<element>`, e nao do
-        # `<logic_element>` -- um Connector nao tem logic_element nenhum, e e'
-        # por isso que o nome dele nao chegava ao desenho.
+        # `<label>` is a DIRECT child of `<element>`, not of
+        # `<logic_element>` -- a Connector has no logic_element at all, which
+        # is why its name never reached the drawing.
         "label": (el.findtext("label") or "").strip(),
     }
 
 
 def page_bounds(page: ET.Element, in_counts: dict, out_counts: dict,
                 sym_widths: dict[str, int]) -> tuple[int, int, int]:
-    """Devolve (max_x, max_y, min_x) considerando o espaco dos comentarios.
+    """Return (max_x, max_y, min_x), with room for the port comments.
 
-    min_x pode ser negativo: comentarios de portas no lado direito (output)
-    sao renderizados a ESQUERDA da caixa e podem ultrapassar x=0.
+    min_x can be negative: comments on a left-side (input) port are rendered
+    to the LEFT of the box and may run past x=0.
     """
     max_x = max_y = 0
     min_x = 0
@@ -258,10 +261,10 @@ def page_bounds(page: ET.Element, in_counts: dict, out_counts: dict,
             w, h = compute_size(info, n_in, n_out)
         max_x = max(max_x, info["left"] + w)
         max_y = max(max_y, info["top"] + h)
-        # Comentarios de portas estendem o canvas (texto fica do MESMO lado
-        # da porta, acima da linha):
-        # - output_comments (lado direito) -> texto a DIREITA da caixa
-        # - input_comments (lado esquerdo) -> texto a ESQUERDA da caixa
+        # Port comments extend the canvas. The text sits on the SAME side as
+        # its port, just above the wire:
+        # - output comments (right side) -> text to the RIGHT of the box
+        # - input comments (left side)   -> text to the LEFT of the box
         for txt in info.get("output_comments", {}).values():
             max_x = max(max_x, info["left"] + w + _estimate_comment_width(txt))
         for txt in info.get("input_comments", {}).values():
@@ -275,8 +278,8 @@ def page_bounds(page: ET.Element, in_counts: dict, out_counts: dict,
 def group_bounds(group: ET.Element, in_counts: dict, out_counts: dict,
                  sym_widths: dict[str, int]) -> tuple[int, int, int, int] | None:
     """
-    Bounding box dos elementos dentro do <group>, ja considerando o tamanho
-    real de cada elemento. Retorna (x0, y0, x1, y1) ou None se vazio.
+    Bounding box of the elements inside a <group>, using each element's real
+    size. Returns (x0, y0, x1, y1), or None when the group is empty.
     """
     x0 = y0 = 10**9
     x1 = y1 = -(10**9)
@@ -287,7 +290,7 @@ def group_bounds(group: ET.Element, in_counts: dict, out_counts: dict,
             w = sym_widths.get(info["id"]) or _estimate_symbol_width(info["name"])
             h = ELEMENT_MIN_SIZE["SYMBOL"][1]
         elif info["type"] == "Text":
-            # Elementos Text nao tem tamanho conhecido; usa minimo
+            # A Text element has no known size; use the minimum.
             w, h = ELEMENT_MIN_SIZE.get("SYMBOL", (66, 12))
         else:
             n_in = in_counts.get(info["id"], DEFAULT_PORTS.get(info["type"], (1, 1))[0])
@@ -306,10 +309,9 @@ def group_bounds(group: ET.Element, in_counts: dict, out_counts: dict,
 def render_group(group: ET.Element, in_counts: dict, out_counts: dict,
                  sym_widths: dict[str, int]) -> str:
     """
-    Renderiza o frame pontilhado + label de um <group> em torno dos seus
-    elementos. O retangulo e dimensionado a partir do bounding box dos
-    elementos internos + paddings; o label fica acima dos blocos, centrado
-    horizontalmente dentro do frame.
+    Render a <group>'s dashed frame and label around its elements. The
+    rectangle is sized from the inner bounding box plus padding; the label
+    sits above the blocks, centred horizontally within the frame.
     """
     b = group_bounds(group, in_counts, out_counts, sym_widths)
     if b is None:
@@ -363,7 +365,7 @@ def render_group(group: ET.Element, in_counts: dict, out_counts: dict,
             f'<text class="group-label" x="{text_cx:.1f}" y="{cy:.1f}">{text_safe}</text>'
         )
     else:
-        # Sem label: checkbox centrado em cima da linha tracejada.
+        # No label: centre the checkbox on the dashed line.
         cb_x = fx + fw / 2 - cb_size / 2
         cb_y = cy - cb_size / 2
         bg_pad = 2
@@ -441,16 +443,16 @@ GROUP_PAD_TOP = 22
 # Altura reservada para o label (centralizado nessa faixa).
 GROUP_LABEL_BAND = 14
 
-# SYMBOLs cujo "nome" e um literal numerico (0, 1, 10, 600, ...) sao
-# CONSTANTES (entradas de setpoint pra timers/comparadores). Nao devem
-# ser consultados na Relay Word nem coloridos como "desconhecido".
+# A SYMBOL whose "name" is a numeric literal (0, 1, 10, 600, ...) is a
+# CONSTANT -- a setpoint feeding a timer or a comparator. It must not be
+# looked up in the Relay Word, nor painted as "unknown".
 INT_LITERAL_RE = re.compile(r"^-?\d+(\.\d+)?$")
 
 
 def is_const_symbol_name(name: str) -> bool:
     return bool(INT_LITERAL_RE.fullmatch((name or "").strip()))
 
-# Largura aproximada de uma letra monospace fs=6 (px).
+# Approximate width of one monospace character at font-size 6, in px.
 PORT_COMMENT_CHAR_W = 3.5
 # Folga entre a borda do elemento e o inicio/fim do texto do comentario.
 PORT_COMMENT_GAP = 4
@@ -464,16 +466,17 @@ def _estimate_comment_width(text: str) -> int:
 def _port_comment_svg(comment: str, anchor_x: float, port_y: float,
                       side: str) -> str:
     """
-    Texto do comentario na MESMA lateral da porta, logo ACIMA da linha do
-    pino/fio (para nao sobrepor a conexao).
-      `side="right"` (porta no lado direito): texto a DIREITA do anchor_x,
-        text-anchor=start (cresce pra direita).
-      `side="left"`  (porta no lado esquerdo): texto a ESQUERDA do anchor_x,
-        text-anchor=end (cresce pra esquerda).
+    The comment text on the SAME side as its port, just ABOVE the pin/wire so
+    it never covers the connection.
+      `side="right"` (port on the right): text to the RIGHT of anchor_x,
+        text-anchor=start, growing rightwards.
+      `side="left"`  (port on the left): text to the LEFT of anchor_x,
+        text-anchor=end, growing leftwards.
     """
     if not comment:
         return ""
-    # Baseline 1.5px acima da linha do pino -- texto sobe, conexao livre.
+    # Baseline 1.5px above the pin's line: the text rises, the wire stays
+    # clear.
     y_text = port_y - 1.5
     if side == "right":
         x = anchor_x + PORT_COMMENT_GAP
@@ -488,7 +491,7 @@ def _port_comment_svg(comment: str, anchor_x: float, port_y: float,
 
 
 def _estimate_symbol_width(name: str) -> int:
-    """Largura aproximada para um SYMBOL com base no comprimento do texto."""
+    """Approximate width for a SYMBOL, from the length of its text."""
     n = max(len(name or ""), 2)
     # Monospace fs=7: ~5.2px/char + 14px de padding
     return max(30, int(n * 5.5) + 14)
@@ -497,14 +500,15 @@ def _estimate_symbol_width(name: str) -> int:
 def render_symbol(info: dict, width: int | None = None,
                   analog_group_key: str | None = None) -> str:
     """
-    SVG para um SYMBOL: caixa com texto.
-    `width`: se providos (deduzidos das conexoes), usa esse valor exato pra
-    o desenho casar com os endpoints reais das linhas do GLE.
-    Atributo data-bit usado pelo dashboard pra colorir bits ativos.
-    Se `analog_group_key` for fornecido, o SYMBOL e renderizado como bloco
-    analogico (cor distinta, sem coloring bit-0/bit-1) e ganha um
-    placeholder <text class="analog-value">--</text> que o JS substitui pela
-    leitura ao vivo de fm_data['analogs'][NAME].
+    SVG for a SYMBOL: a box with text.
+
+    `width`, when given (deduced from the connections), is used exactly, so
+    the drawing meets the real endpoints of the GLE's lines. The `data-bit`
+    attribute is what a live overlay uses to colour an active bit.
+
+    With `analog_group_key`, the SYMBOL is drawn as an analogue block instead
+    -- its own colour, no bit-0/bit-1 painting -- and gets a
+    `<text class="analog-value">` placeholder for a live reading to replace.
     """
     _, h = ELEMENT_MIN_SIZE["SYMBOL"]
     name = info["name"] or info["alias"] or ""
@@ -530,10 +534,10 @@ def render_symbol(info: dict, width: int | None = None,
                 f' data-analog-group="{html.escape(analog_group_key or "")}"')
     elif name:
         data = f' data-bit="{html.escape(name)}"'
-    # Comentarios das portas (SYMBOL tem 1 porta unica de cada lado, idx=0):
-    # comentario fica do MESMO lado da porta, acima da linha do fio.
-    #   porta no lado direito (output) -> texto a DIREITA da caixa.
-    #   porta no lado esquerdo (input) -> texto a ESQUERDA da caixa.
+    # Port comments. A SYMBOL has exactly one port per side (idx=0), and the
+    # comment sits on the SAME side as its port, above the wire:
+    #   right-side port (output) -> text to the RIGHT of the box
+    #   left-side port (input)   -> text to the LEFT of the box
     cy = y + h / 2
     cmt_svg = ""
     out_cmt = info.get("output_comments", {}).get(0, "")
@@ -560,13 +564,12 @@ def render_symbol(info: dict, width: int | None = None,
         op_svg += f'<text class="port-edge" x="{x + 2}" y="{cy + 0.5}">↑</text>'
     elif imod == "FTRIG":
         op_svg += f'<text class="port-edge" x="{x + 2}" y="{cy + 0.5}">↓</text>'
-    # Bloco analogico: caixa do mesmo tamanho (preserva alinhamento dos fios),
-    # com o NOME dentro e o VALOR como tag logo abaixo da caixa. O placeholder
-    # mostra '---' ate o JS substituir pela leitura ao vivo de
-    # values.analogs[NAME]. Quando o rele nao expoe esse canal, o JS deixa
-    # '---' (caso "N/A"). Texto abaixo da caixa transborda do bounding box do
-    # SVG mas e absorvido pelo padding/overflow do viewer (rect.bg cobre tudo
-    # ate as bordas do viewBox; valores ficam visiveis sobre o fundo).
+    # An analogue block: same box size, so the wires stay aligned, with the
+    # NAME inside and the VALUE as a tag just below it. The placeholder reads
+    # '---' until a live reading replaces it, and stays '---' when the relay
+    # does not expose that channel. The text below the box overflows the SVG's
+    # bounding box, but the viewer's padding absorbs it (rect.bg covers
+    # everything out to the viewBox edges, so the values stay legible).
     if is_analog:
         inner = (
             f'<rect class="{classes}" x="{x}" y="{y}" width="{w}" height="{h}"/>'
@@ -588,8 +591,8 @@ def render_symbol(info: dict, width: int | None = None,
 
 def _port_y(top: int, port_index: int, element_type: str) -> int:
     """
-    Posicao Y do port_index dentro de uma caixa que comeca em y=top.
-    Offset da primeira porta depende do tipo (PLT/PCNDTIMER tem 24, outros 12).
+    The Y position of `port_index` inside a box starting at y=top. The first
+    port's offset depends on the type (24 for PLT/PCNDTIMER, 12 for the rest).
     """
     first_off = PORT_FIRST_OFFSET.get(element_type, DEFAULT_FIRST_OFFSET)
     return top + first_off + port_index * PORT_SPACING
@@ -618,9 +621,9 @@ def _input_pins_svg(x: int, y: int, n: int, mods: dict[int, str],
                 f'x2="{x}" y2="{py}"/>'
             )
             if mod == "RTRIG":
-                # Seta DENTRO do bloco (posicao 1), logo a direita da borda
-                # de entrada. O nome do input fica na posicao 2 (port-comment
-                # do lado de fora).
+                # The arrow goes INSIDE the block (position 1), just right
+                # of the input edge. The input's name takes position 2 (the
+                # port comment, outside).
                 out.append(
                     f'<text class="port-edge" x="{x + 2}" y="{py + 0.5}">↑</text>'
                 )
@@ -657,11 +660,11 @@ def render_gate(info: dict, n_in: int, n_out: int, label: str,
                 output_bit: str | None = None,
                 connector: str | None = None) -> str:
     """
-    Desenha gate generico:
-      - rect com altura proporcional a max(n_in, n_out), cantos retos
-      - pinos na esquerda (inputs) e direita (outputs), com bubble (NOT)
-        ou seta (RTRIG/FTRIG) conforme `port_operator` do GLE
-      - label central + sublabels opcionais (para PCNDTIMER, PLT, AST)
+    Draw a generic gate:
+      - a square-cornered rect, its height proportional to max(n_in, n_out)
+      - pins on the left (inputs) and right (outputs), with a bubble (NOT) or
+        an arrow (RTRIG/FTRIG) according to the GLE's `port_operator`
+      - a centred label, plus optional sublabels (PCNDTIMER, PLT, AST)
     """
     w, h = compute_size(info, n_in, n_out)
     x, y = info["left"], info["top"]
@@ -672,7 +675,7 @@ def render_gate(info: dict, n_in: int, n_out: int, label: str,
     etype = info["type"]
     pins_in = _input_pins_svg(x, y, n_in, info.get("input_mods", {}), etype)
     pins_out = _output_pins_svg(x + w, y, n_out, info.get("output_mods", {}), etype)
-    # Label central (sublabels desviam pra cima)
+    # The centred label; sublabels push it upwards.
     if sublabels:
         label_y = y + 10
     else:
@@ -681,10 +684,10 @@ def render_gate(info: dict, n_in: int, n_out: int, label: str,
         f'<text class="gate-label" x="{x + w / 2}" y="{label_y}">'
         f'{html.escape(label)}</text>'
     )
-    # Sublabels (uma por porta de entrada). Posicionados na "posicao 2",
-    # apos o slot reservado pra seta RTRIG/FTRIG (posicao 1 em x+2), para
-    # que nao haja sobreposicao quando a porta tem edge trigger. Mantido
-    # uniforme em TODOS os blocos para alinhamento visual consistente.
+    # Sublabels, one per input port, at "position 2" -- after the slot
+    # reserved for an RTRIG/FTRIG arrow (position 1, at x+2), so the two never
+    # overlap when a port is edge-triggered. Kept uniform across ALL blocks so
+    # they line up.
     sub_svg = ""
     if sublabels:
         for i, sub in enumerate(sublabels[:n_in]):
@@ -693,9 +696,9 @@ def render_gate(info: dict, n_in: int, n_out: int, label: str,
                 f'<text class="port-sublabel" x="{x + 8}" y="{py + 0.5}">'
                 f'{html.escape(sub)}</text>'
             )
-    # Comentarios por porta: ficam do MESMO lado da porta, acima da linha
-    # do fio. input -> texto a ESQUERDA da caixa (right-aligned). output ->
-    # texto a DIREITA da caixa (left-aligned).
+    # Per-port comments sit on the SAME side as their port, above the wire.
+    # An input -> text to the LEFT of the box (right-aligned); an output ->
+    # text to the RIGHT of the box (left-aligned).
     cmt_svg = ""
     for idx, txt in info.get("input_comments", {}).items():
         if idx >= n_in:
@@ -710,8 +713,9 @@ def render_gate(info: dict, n_in: int, n_out: int, label: str,
     out_attr = (
         f' data-output-bit="{html.escape(output_bit)}"' if output_bit else ""
     )
-    # A chave de pareamento da rede de conector. Duas pontas com o mesmo
-    # `data-connector` sao o mesmo sinal, e nada no XML as liga alem disto.
+    # The key that pairs up a connector network. Two ends carrying the same
+    # `data-connector` are the same signal, and nothing else in the XML links
+    # them.
     conn_attr = (
         f' data-connector="{html.escape(connector)}"' if connector else ""
     )
@@ -725,8 +729,8 @@ def render_gate(info: dict, n_in: int, n_out: int, label: str,
 
 def render_pcndtimer(info: dict, n_in: int, n_out: int) -> str:
     """
-    PCNDTIMER: 3 entradas (in, pickup, dropout), 1 saida. Visual de timer.
-    Nos reles SEL-4xx, o nome instancia (ex: PCT03) tem saida em <nome>Q.
+    PCNDTIMER: 3 inputs (in, pickup, dropout), 1 output, drawn as a timer. On
+    a SEL-4xx the instance name (PCT03, say) has its output at <name>Q.
     """
     raw_name = info.get("name") or ""
     label = raw_name or "TIMER"
@@ -741,9 +745,9 @@ def render_pcndtimer(info: dict, n_in: int, n_out: int) -> str:
 
 def render_plt(info: dict, n_in: int, n_out: int) -> str:
     """
-    PLT: latch S/R.
-    Nos reles SEL-4xx, o nome instancia (ex: _PLT04) corresponde a saida PLT04
-    (sem o underscore inicial) na Relay Word.
+    PLT: an S/R latch. On a SEL-4xx the instance name (`_PLT04`, say)
+    corresponds to the Relay Word output PLT04 -- the same name without its
+    leading underscore.
     """
     raw_name = info.get("name") or ""
     name = raw_name.lstrip("_")
@@ -758,7 +762,7 @@ def render_plt(info: dict, n_in: int, n_out: int) -> str:
 
 
 def render_ast(info: dict, n_in: int, n_out: int) -> str:
-    """AST: 3 inputs, 2 outputs. Output principal em <nome>Q."""
+    """AST: 3 inputs, 2 outputs. The main output is <name>Q."""
     raw_name = info.get("name") or ""
     label = raw_name or "AST"
     output_bit = (raw_name + "Q") if raw_name else None
@@ -777,8 +781,8 @@ def render_rtrig(info: dict, n_in: int, n_out: int) -> str:
 
 
 def render_pcn(info: dict, n_in: int, n_out: int) -> str:
-    """PCN (Counter): 3 entradas (in, preset value, reset), >=1 saidas.
-    A saida principal na Relay Word eh <nome>Q (ex.: PCN03 -> PCN03Q)."""
+    """PCN (a counter): 3 inputs (in, preset value, reset), 1 or more outputs.
+    The main Relay Word output is <name>Q (PCN03 -> PCN03Q)."""
     raw_name = info.get("name") or ""
     label = raw_name or "PCN"
     output_bit = (raw_name + "Q") if raw_name else None
@@ -791,8 +795,8 @@ def render_pcn(info: dict, n_in: int, n_out: int) -> str:
 
 
 def render_latch_7xx(info: dict, n_in: int, n_out: int) -> str:
-    """SEL-7xx LATCH (SELOGIC Latch): 2 entradas (S/R), 1 saida.
-    physical_instance_name '_LT##' -> bit Relay Word 'LT##' (sem Q)."""
+    """SEL-7xx LATCH (a SELOGIC latch): 2 inputs (S/R), 1 output.
+    physical_instance_name '_LT##' -> Relay Word bit 'LT##', with no Q."""
     raw_name = info.get("name") or ""
     name = raw_name.lstrip("_")
     label = name or "LATCH"
@@ -806,9 +810,9 @@ def render_latch_7xx(info: dict, n_in: int, n_out: int) -> str:
 
 
 def render_timer_7xx(info: dict, n_in: int, n_out: int) -> str:
-    """SEL-7xx TIMER (SELOGIC Variable Timer): 3 entradas (in/PU/DO), 1 saida.
-    physical_instance_name '_SV##' -> bit Relay Word 'SV##T' (saida do timer com
-    delay aplicado; SV## bare e o input pre-timer)."""
+    """SEL-7xx TIMER (a SELOGIC variable timer): 3 inputs (in/PU/DO), 1 output.
+    physical_instance_name '_SV##' -> Relay Word bit 'SV##T', the timer's
+    output with its delay applied; bare SV## is the input before the timer."""
     raw_name = info.get("name") or ""
     name = raw_name.lstrip("_")
     label = name or "TIMER"
@@ -822,9 +826,10 @@ def render_timer_7xx(info: dict, n_in: int, n_out: int) -> str:
 
 
 def render_counter_7xx(info: dict, n_in: int, n_out: int) -> str:
-    """SEL-7xx COUNTER (SELOGIC Counter): 3 entradas (in/PV/R), 1+ saidas.
-    physical_instance_name '_SC##' -> bit Relay Word 'SC##QU' (counter atingiu
-    o preset, count-up). SC##QD eh a saida count-down (nao usada como default)."""
+    """SEL-7xx COUNTER (a SELOGIC counter): 3 inputs (in/PV/R), 1 or more outputs.
+    physical_instance_name '_SC##' -> Relay Word bit 'SC##QU', the count-up
+    output, meaning the counter reached its preset. SC##QD is the count-down
+    output and is not the default."""
     raw_name = info.get("name") or ""
     name = raw_name.lstrip("_")
     label = name or "COUNTER"
@@ -838,10 +843,10 @@ def render_counter_7xx(info: dict, n_in: int, n_out: int) -> str:
 
 
 def render_alt(info: dict, n_in: int, n_out: int) -> str:
-    """ALT (Auxiliary Latch SEL-4xx): S/R latch, 2 entradas (Set, Reset),
-    1 saida. Convencao SEL: physical_instance_name vem como `_ALT01` no GLE
-    e a saida na Relay Word eh `ALT01` (sem underscore, sem Q). Mesma forma
-    visual e mesma logica de bit usadas em render_plt."""
+    """ALT (a SEL-4xx auxiliary latch): an S/R latch, 2 inputs (Set, Reset), 1
+    output. By SEL's convention the physical_instance_name arrives as `_ALT01`
+    in the GLE and the Relay Word output is `ALT01` -- no underscore, no Q.
+    Same shape and same bit rule as render_plt."""
     raw_name = info.get("name") or ""
     name = raw_name.lstrip("_")
     label = name or "ALT"
@@ -906,8 +911,9 @@ def render_element(info: dict, n_in: int, n_out: int,
     if t == "COUNTER":
         return render_counter_7xx(info, n_in, n_out)
     if t == "Connector":
-        # O nome no lugar do `→`: e' o que deixa uma pessoa ver que as duas
-        # pontas sao a mesma rede, e o que da ao avaliador a chave pra ligar.
+        # The name in place of the `→`: it is what lets a person see that
+        # the two ends are the same network, and what gives the evaluator the
+        # key to join them.
         label = info.get("label") or ""
         return render_gate(info, max(n_in, 1), max(n_out, 1),
                            label or "→", "element-gate",
@@ -929,7 +935,7 @@ def render_connection(conn: ET.Element, sink_mods: dict | None = None,
     dst_id = dst.get("element_id") if dst is not None else ""
     sp = src.get("port_number", "0") if src is not None else "0"
     dp = dst.get("port_number", "0") if dst is not None else "0"
-    # Modificadores das portas (NOT/RTRIG/FTRIG) -- pre-calculados pelo caller.
+    # Port modifiers (NOT/RTRIG/FTRIG), pre-computed by the caller.
     sink_mod = ""
     if sink_mods and dst_id:
         sink_mod = sink_mods.get((dst_id, int(dp)), "")
@@ -989,7 +995,7 @@ def render_page(page: ET.Element, title_prefix: str = "",
         s = render_group(grp, in_counts, out_counts, sym_widths)
         if s:
             parts.append(s)
-    # Conexoes primeiro (vao por tras)
+    # Connections first: they belong behind everything else.
     for conn in page.findall(".//connection"):
         s = render_connection(conn, sink_mods=sink_mods, source_mods=source_mods)
         if s:
@@ -1008,8 +1014,8 @@ def render_page(page: ET.Element, title_prefix: str = "",
         n_in = in_counts.get(info["id"], defaults[0])
         n_out = out_counts.get(info["id"], defaults[1])
         sw = sym_widths.get(info["id"]) if info["type"] == "SYMBOL" else None
-        # Marca SYMBOLs analogicos (AMV/PMV/MV/MAG/...) pra render_symbol
-        # desenhar com aparencia distinta + placeholder de valor.
+        # Mark the analogue SYMBOLs (AMV/PMV/MV/MAG/...) so render_symbol
+        # draws them differently and leaves a value placeholder.
         agk = None
         if info["type"] == "SYMBOL" and relay_model is not None:
             grp = relay_model.analog_group_for(info.get("name") or "")

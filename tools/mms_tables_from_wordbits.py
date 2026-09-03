@@ -94,16 +94,17 @@ def _collapse(rows: list) -> dict:
 
 
 def decorated_rows(scl_path: Path) -> dict:
-    """`{BIT: [ld_suffix, item, [alternativas, indice, nbits]]}` de um ICD.
+    """`{BIT: [ld_suffix, item, [alternatives, index, nbits]]}` from one ICD.
 
-    So' os enderecos DECORADOS -- os que `wordbits.json` nao tem. O FC sai do
-    `DataTypeTemplates` do proprio arquivo e nao de uma constante: medido nos
-    146 ICD do corpus, os 2.030 enderecos decorados sao todos `ST`, e resolver
-    mesmo assim e' o que faz um ICD futuro que discorde falhar alto em vez de
-    gravar um item que o rele nao serve.
+    DECORATED addresses only -- the ones `wordbits.json` does not carry. The
+    FC comes from the file's own `DataTypeTemplates` rather than from a
+    constant: measured over the corpus's 146 ICDs, all 2,030 decorated
+    addresses are `ST`, and resolving anyway is what makes a future ICD that
+    disagrees fail loudly instead of writing an item the relay does not serve.
 
-    Um ponto sem FC resolvivel nao vira linha: chutar produz um item que some
-    calado la' na frente, quando `resolve_map` o conferir contra o diretorio.
+    A point whose FC does not resolve produces no row: guessing yields an item
+    that disappears quietly later, when the live resolver checks it against
+    the relay's own directory.
     """
     fcs_by_ied = sel_da_fcs(scl_path)
     best: dict = {}
@@ -128,11 +129,11 @@ def decorated_rows(scl_path: Path) -> dict:
 
 
 def merge_decorated(plain: dict, decorated: dict) -> dict:
-    """As linhas lisas, mais as decoradas que elas nao cobrem.
+    """The plain rows, plus the decorated ones they do not already cover.
 
-    Nunca sobrescreve: um bit com endereco booleano fica com ele. E' a mesma
-    preferencia do caminho vivo (`mms_tables.da_rank`), e tambem o que impede
-    esta passagem de mudar o item de uma linha ja publicada.
+    Never overwrites: a bit with a boolean address keeps it. That is the same
+    preference the live path applies (`mms_tables.da_rank`), and it is also
+    what stops this pass from changing the item of a row already published.
     """
     out = dict(plain)
     for bit, row in decorated.items():
@@ -163,9 +164,9 @@ def main() -> int:
         if not args.all and norm(part) not in CORPUS:
             continue
         bits = _collapse(entry["bits"])
-        # A metade decorada vem do ICD que ESTE modelo nomeia, e nao de uma
-        # varredura do diretorio: e' o que garante que as duas metades da
-        # tabela venham da mesma revisao de firmware.
+        # The decorated half comes from the ICD THIS model names, not from a
+        # scan of the directory: that is what guarantees both halves of the
+        # table come from the same firmware revision.
         icd = args.icd_dir / Path(entry.get("path", "")).name
         source = "ICD de fabrica, via fixtures/ICD files/SEL/wordbits.json"
         if entry.get("path") and icd.is_file():
@@ -181,10 +182,10 @@ def main() -> int:
             "group": group,
             "config_version": entry.get("config_version"),
             "source": source,
-            # bit -> [ld_suffix, item] ou, num ponto decorado,
-            # [ld_suffix, item, [alternativas, indice, nbits]]. O item ja traz
-            # o FC do ICD; o modo MMS confere contra o diretorio do rele antes
-            # de usar.
+            # bit -> [ld_suffix, item] or, for a decorated point,
+            # [ld_suffix, item, [alternatives, index, nbits]]. The item already
+            # carries the FC from the ICD; the live MMS path checks it against
+            # the relay's directory before using it.
             "bits": bits,
         }
         path = args.out / f"{norm(part)}-{group}.json"
@@ -195,9 +196,9 @@ def main() -> int:
     print(f"{written} tabelas em {args.out} ({total / 1e6:.1f} MB), "
           f"{decorated_total} endereco(s) decorado(s)")
     if missing_icd:
-        # Nao e' erro: um clone sem os ICD gera as tabelas lisas do mesmo
-        # jeito. Mas em silencio ninguem descobre por que a metade decorada
-        # sumiu de uma regeracao pra outra.
+        # Not an error: a clone without the ICDs still generates the plain
+        # tables. But in silence nobody would work out why the decorated half
+        # vanished between one regeneration and the next.
         print(f"AVISO: {len(missing_icd)} ICD nao encontrado(s) em "
               f"{args.icd_dir} -- sem a metade decorada: "
               f"{', '.join(sorted(missing_icd)[:5])}"
