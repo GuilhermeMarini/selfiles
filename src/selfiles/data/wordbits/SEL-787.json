@@ -1,0 +1,102 @@
+{
+  "schema_version": 2,
+  "model": "787",
+  "model_aliases": [],
+  "always_valid": [
+    "",
+    "0",
+    "1",
+    "NA"
+  ],
+  "check_kinds": [
+    "BO"
+  ],
+  "kinds": {
+    "BI": [
+      "ENABLED",
+      "IN101",
+      "IN102",
+      "STFAIL",
+      "STSET",
+      "TRIP1",
+      "TRIP2",
+      "TRIPXFMR"
+    ],
+    "BO": [
+      "RB01",
+      "RB02",
+      "RB03",
+      "RB04",
+      "RB05",
+      "RB06",
+      "RB07",
+      "RB08",
+      "RB09",
+      "RB10",
+      "RB11",
+      "RB12",
+      "RB13",
+      "RB14",
+      "RB15",
+      "RB16",
+      "RB17",
+      "RB18",
+      "RB19",
+      "RB20",
+      "RB21",
+      "RB22",
+      "RB23",
+      "RB24",
+      "RB25",
+      "RB26",
+      "RB27",
+      "RB28",
+      "RB29",
+      "RB30",
+      "RB31",
+      "RB32"
+    ],
+    "AI": [
+      "3I2W1MAG",
+      "3I2W2MAG",
+      "3I2W3MAG",
+      "I1W1_MAG",
+      "I1W2_MAG",
+      "I1W3_MAG",
+      "IAVW1MAG",
+      "IAVW2MAG",
+      "IAW1_MAG",
+      "IAW2_MAG",
+      "IAW3_MAG",
+      "IBW1_MAG",
+      "IBW2_MAG",
+      "IBW3_MAG",
+      "ICW1_MAG",
+      "ICW2_MAG",
+      "ICW3_MAG",
+      "IGW1_MAG",
+      "IGW2_MAG",
+      "IGW3_MAG"
+    ],
+    "AO": [],
+    "CO": []
+  },
+  "bits": [],
+  "patterns": [],
+  "source": {
+    "dnp_profiles": [
+      {
+        "file": "dnp_r100787.zip",
+        "device_name": "SEL-787",
+        "document_version": "100"
+      },
+      {
+        "file": "dnp_r100787-4.zip",
+        "device_name": "SEL-787-4",
+        "document_version": "100"
+      }
+    ],
+    "relay_word": null,
+    "generated": "2026-08-23"
+  }
+}

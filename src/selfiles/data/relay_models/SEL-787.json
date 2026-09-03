@@ -1,0 +1,460 @@
+{
+  "schema_version": 1,
+  "model": "SEL-787",
+  "model_aliases": [
+    "787",
+    "SEL-787-2",
+    "787-2",
+    "SEL-787-3",
+    "787-3",
+    "SEL-787-4",
+    "787-4"
+  ],
+  "_notes": [
+    "SEL-787: rele de protecao DIFERENCIAL de transformador (ANSI 87).",
+    "",
+    "Era um alias do SEL-751 e NAO devia ser. O 751 e' rele de alimentador:",
+    "os `analog_symbols` dele casam IA/IB/IC, VA/VB/VC, IN/IG -- grandezas de",
+    "um vao de saida. O 787 mede por ENROLAMENTO (IAW1, IBW2, IGW1, 3I2W1) e",
+    "nenhum desses nomes casa nenhum padrao do 751, entao um 787 lido como 751",
+    "aparecia na GLV com ZERO simbolos analogicos reconhecidos.",
+    "",
+    "O que aqui e' MEDIDO, e de onde:",
+    "  - `analog_symbols`: dos perfis DNP3 da SEL em docs/dnp_r100787.zip",
+    "    (device SEL-787, 12 pontos AI) e docs/dnp_r100787-4.zip (device",
+    "    SEL-787-4, que acrescenta os canais do enrolamento 3). Uniao dos dois:",
+    "    IAW1_MAG IBW1_MAG ICW1_MAG IGW1_MAG 3I2W1MAG IAVW1MAG I1W1_MAG",
+    "    e o mesmo para W2 e W3. Regenerar com tools/wordbits_from_dnp_profile.py.",
+    "  - Os padroes aceitam com e sem o sufixo `_MAG`: o rotulo DNP tem limite",
+    "    de 8 caracteres, e e' por isso que a SEL escreve `IAW1_MAG` com",
+    "    underscore e `3I2W1MAG`/`IAVW1MAG` sem -- nao cabia. No GLE e na Relay",
+    "    Word o nome vem sem o sufixo.",
+    "",
+    "O que NAO foi verificado, e precisa de um rele de verdade:",
+    "  - As grandezas DIFERENCIAIS (IOP/IRT, operacao e restricao por fase) sao",
+    "    o motivo de existir de um 87. Elas NAO estao no perfil DNP -- que so",
+    "    documenta o mapa padrao de fabrica -- entao nao ha nome medido pra",
+    "    casar e nenhum padrao foi inventado aqui. Um simbolo nao reconhecido",
+    "    so deixa de ser agrupado; um padrao errado agruparia a grandeza errada,",
+    "    que num rele de protecao e' pior. Quem tiver um 787 na bancada: rode a",
+    "    GLV, pegue os nomes do cache/<FID>.json e acrescente o grupo aqui.",
+    "  - `bits` em data/wordbits/SEL-787.json continua vazio pelo mesmo motivo:",
+    "    a Relay Word sai de uma captura da GLV (tools/wordbits_from_glv_cache.py),",
+    "    nao do perfil DNP.",
+    "",
+    "O dialeto de blocos e' o da familia 7xx, identico ao do 751: LATCH/TIMER/",
+    "COUNTER no GLE e LT##/SV##/SC## sem sufixo Q na Relay Word. `fast_read` e'",
+    "`fast_meter_digitals`, tambem como o resto da familia -- a 7xx nao expoe",
+    "regiao TARGET via Fast Message."
+  ],
+  "fast_read": "fast_meter_digitals",
+  "relay_id": {
+    "file": "set_1.txt",
+    "key": "RID"
+  },
+  "ip_address": {
+    "file": "set_p1.txt",
+    "key": "IPADDR"
+  },
+  "mac_address": null,
+  "_analog_notes": [
+    "Um grupo por natureza de grandeza, nao por enrolamento: o engenheiro le",
+    "'correntes de fase' e ve W1, W2 e W3 juntas, que e' como se compara os",
+    "lados de um diferencial."
+  ],
+  "analog_symbols": [
+    {
+      "key": "I_PH_W",
+      "label": "Correntes de Fase por Enrolamento",
+      "patterns": [
+        "^I[ABC]W[1-4](_MAG)?$"
+      ]
+    },
+    {
+      "key": "I_GND_W",
+      "label": "Corrente de Terra por Enrolamento",
+      "patterns": [
+        "^IGW[1-4](_MAG)?$"
+      ]
+    },
+    {
+      "key": "I_SEQ_W",
+      "label": "Sequencia por Enrolamento",
+      "patterns": [
+        "^3I2W[1-4](_?MAG)?$",
+        "^I1W[1-4](_MAG)?$"
+      ]
+    },
+    {
+      "key": "I_AVG_W",
+      "label": "Corrente Media por Enrolamento",
+      "patterns": [
+        "^IAVW[1-4](_?MAG)?$"
+      ]
+    },
+    {
+      "key": "FREQ",
+      "label": "Frequencia",
+      "patterns": [
+        "^FREQ$"
+      ]
+    }
+  ],
+  "blocks": {
+    "SYMBOL": {
+      "kind": "symbol",
+      "gle_xml_type": "SYMBOL",
+      "geometry": {
+        "min_width": 66,
+        "min_height": 12,
+        "port_first_offset_y": 12,
+        "port_spacing_y": 12
+      },
+      "output_bit_pattern": "IDENTITY",
+      "css_class": "element-symbol",
+      "label_source": "INSTANCE_NAME_RAW",
+      "min_ports": {
+        "inputs": 0,
+        "outputs": 0
+      },
+      "default_ports": {
+        "inputs": 1,
+        "outputs": 1
+      },
+      "evaluation": {
+        "type": "passthrough_with_relay_output",
+        "stateful": false,
+        "authoritative_from_relay": true
+      }
+    },
+    "Connector": {
+      "kind": "connector",
+      "gle_xml_type": "Connector",
+      "geometry": {
+        "min_width": 24,
+        "min_height": 12,
+        "port_first_offset_y": 6,
+        "port_spacing_y": 12
+      },
+      "output_bit_pattern": "IDENTITY",
+      "css_class": "element-gate",
+      "label_glyph": "\u2192",
+      "label_source": "LITERAL_GLYPH",
+      "min_ports": {
+        "inputs": 1,
+        "outputs": 1
+      },
+      "default_ports": {
+        "inputs": 1,
+        "outputs": 1
+      },
+      "evaluation": {
+        "type": "connector",
+        "stateful": false,
+        "authoritative_from_relay": false
+      }
+    },
+    "AND": {
+      "kind": "and",
+      "gle_xml_type": "AND",
+      "label_glyph": "&",
+      "css_class": "element-logic",
+      "default_ports": {
+        "inputs": 2,
+        "outputs": 1
+      },
+      "evaluation": {
+        "type": "and",
+        "stateful": false,
+        "authoritative_from_relay": false
+      }
+    },
+    "OR": {
+      "kind": "or",
+      "gle_xml_type": "OR",
+      "label_glyph": "\u22651",
+      "css_class": "element-logic",
+      "default_ports": {
+        "inputs": 2,
+        "outputs": 1
+      },
+      "evaluation": {
+        "type": "or",
+        "stateful": false,
+        "authoritative_from_relay": false
+      }
+    },
+    "NOT": {
+      "kind": "not",
+      "gle_xml_type": "NOT",
+      "label_glyph": "\u00ac",
+      "css_class": "element-logic",
+      "default_ports": {
+        "inputs": 1,
+        "outputs": 1
+      },
+      "evaluation": {
+        "type": "not",
+        "stateful": false,
+        "authoritative_from_relay": false
+      }
+    },
+    "EQ": {
+      "kind": "eq",
+      "gle_xml_type": "EQ",
+      "label_glyph": "=",
+      "css_class": "element-logic",
+      "default_ports": {
+        "inputs": 2,
+        "outputs": 1
+      },
+      "evaluation": {
+        "type": "eq",
+        "stateful": false,
+        "authoritative_from_relay": false
+      }
+    },
+    "NE": {
+      "kind": "ne",
+      "gle_xml_type": "NE",
+      "label_glyph": "\u2260",
+      "css_class": "element-logic",
+      "default_ports": {
+        "inputs": 2,
+        "outputs": 1
+      },
+      "evaluation": {
+        "type": "ne",
+        "stateful": false,
+        "authoritative_from_relay": false
+      }
+    },
+    "LT": {
+      "kind": "lt",
+      "gle_xml_type": "LT",
+      "label_glyph": "<",
+      "css_class": "element-logic",
+      "default_ports": {
+        "inputs": 2,
+        "outputs": 1
+      },
+      "evaluation": {
+        "type": "lt",
+        "stateful": false,
+        "authoritative_from_relay": false
+      }
+    },
+    "LE": {
+      "kind": "le",
+      "gle_xml_type": "LE",
+      "label_glyph": "\u2264",
+      "css_class": "element-logic",
+      "default_ports": {
+        "inputs": 2,
+        "outputs": 1
+      },
+      "evaluation": {
+        "type": "le",
+        "stateful": false,
+        "authoritative_from_relay": false
+      }
+    },
+    "GT": {
+      "kind": "gt",
+      "gle_xml_type": "GT",
+      "label_glyph": ">",
+      "css_class": "element-logic",
+      "default_ports": {
+        "inputs": 2,
+        "outputs": 1
+      },
+      "evaluation": {
+        "type": "gt",
+        "stateful": false,
+        "authoritative_from_relay": false
+      }
+    },
+    "GE": {
+      "kind": "ge",
+      "gle_xml_type": "GE",
+      "label_glyph": "\u2265",
+      "css_class": "element-logic",
+      "default_ports": {
+        "inputs": 2,
+        "outputs": 1
+      },
+      "evaluation": {
+        "type": "ge",
+        "stateful": false,
+        "authoritative_from_relay": false
+      }
+    },
+    "ADD": {
+      "kind": "add",
+      "gle_xml_type": "ADD",
+      "label_glyph": "+",
+      "css_class": "element-logic",
+      "default_ports": {
+        "inputs": 2,
+        "outputs": 1
+      },
+      "evaluation": {
+        "type": "add",
+        "stateful": false,
+        "authoritative_from_relay": false
+      }
+    },
+    "SUB": {
+      "kind": "sub",
+      "gle_xml_type": "SUB",
+      "label_glyph": "\u2212",
+      "css_class": "element-logic",
+      "default_ports": {
+        "inputs": 2,
+        "outputs": 1
+      },
+      "evaluation": {
+        "type": "sub",
+        "stateful": false,
+        "authoritative_from_relay": false
+      }
+    },
+    "MULT": {
+      "kind": "mult",
+      "gle_xml_type": "MULT",
+      "label_glyph": "\u00d7",
+      "css_class": "element-logic",
+      "default_ports": {
+        "inputs": 2,
+        "outputs": 1
+      },
+      "evaluation": {
+        "type": "mult",
+        "stateful": false,
+        "authoritative_from_relay": false
+      }
+    },
+    "DIV": {
+      "kind": "div",
+      "gle_xml_type": "DIV",
+      "label_glyph": "\u00f7",
+      "css_class": "element-logic",
+      "default_ports": {
+        "inputs": 2,
+        "outputs": 1
+      },
+      "evaluation": {
+        "type": "div",
+        "stateful": false,
+        "authoritative_from_relay": false
+      }
+    },
+    "LATCH": {
+      "kind": "latch",
+      "gle_xml_type": "LATCH",
+      "geometry": {
+        "min_width": 54,
+        "min_height": 30,
+        "port_first_offset_y": 24,
+        "port_spacing_y": 12
+      },
+      "instance_name_pattern": "_LT{instance:02d}",
+      "output_bit_pattern": "LT{instance:02d}",
+      "sublabels": [
+        "S",
+        "R"
+      ],
+      "output_sublabels": [
+        ""
+      ],
+      "css_class": "element-latch",
+      "label_source": "STRIP_LEADING_UNDERSCORE_NAME",
+      "label_fallback": "LT",
+      "min_ports": {
+        "inputs": 2,
+        "outputs": 1
+      },
+      "default_ports": {
+        "inputs": 2,
+        "outputs": 1
+      },
+      "evaluation": {
+        "type": "sr_latch",
+        "stateful": true,
+        "authoritative_from_relay": true
+      }
+    },
+    "TIMER": {
+      "kind": "timer",
+      "gle_xml_type": "TIMER",
+      "geometry": {
+        "min_width": 66,
+        "min_height": 36,
+        "port_first_offset_y": 24,
+        "port_spacing_y": 12
+      },
+      "instance_name_pattern": "_SV{instance:02d}",
+      "output_bit_pattern": "SV{instance:02d}T",
+      "sublabels": [
+        "in",
+        "PU",
+        "DO"
+      ],
+      "output_sublabels": [
+        ""
+      ],
+      "css_class": "element-timer",
+      "label_source": "STRIP_LEADING_UNDERSCORE_NAME",
+      "label_fallback": "SV",
+      "min_ports": {
+        "inputs": 3,
+        "outputs": 1
+      },
+      "default_ports": {
+        "inputs": 3,
+        "outputs": 1
+      },
+      "evaluation": {
+        "type": "passthrough_with_relay_output",
+        "stateful": true,
+        "authoritative_from_relay": true
+      }
+    },
+    "COUNTER": {
+      "kind": "counter",
+      "gle_xml_type": "COUNTER",
+      "geometry": {
+        "min_width": 66,
+        "min_height": 36,
+        "port_first_offset_y": 24,
+        "port_spacing_y": 12
+      },
+      "instance_name_pattern": "_SC{instance:02d}",
+      "output_bit_pattern": "SC{instance:02d}QU",
+      "sublabels": [
+        "in",
+        "PV",
+        "R"
+      ],
+      "output_sublabels": [
+        ""
+      ],
+      "css_class": "element-counter",
+      "label_source": "STRIP_LEADING_UNDERSCORE_NAME",
+      "label_fallback": "SC",
+      "min_ports": {
+        "inputs": 3,
+        "outputs": 1
+      },
+      "default_ports": {
+        "inputs": 3,
+        "outputs": 1
+      },
+      "evaluation": {
+        "type": "passthrough_with_relay_output",
+        "stateful": true,
+        "authoritative_from_relay": true
+      }
+    }
+  }
+}

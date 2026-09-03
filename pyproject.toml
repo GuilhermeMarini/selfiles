@@ -1,0 +1,43 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "selfiles"
+version = "1.0.0"
+description = "Read and write the file formats an SEL protective relay project is made of: RDB, SET_*.TXT, DNP3 maps, GLE logic diagrams, SELOGIC and IEC 61850 SCL"
+readme = "README.md"
+requires-python = ">=3.10"
+license = "AGPL-3.0-or-later"
+license-files = ["LICENSE"]
+authors = [{ name = "Guilherme Marini" }]
+keywords = ["sel", "acselerator", "rdb", "selogic", "dnp3", "iec61850", "scl",
+            "protection", "relay", "commissioning"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Manufacturing",
+    "Programming Language :: Python :: 3",
+    "Topic :: Scientific/Engineering",
+]
+dependencies = [
+    "olefile>=0.47",
+    "openpyxl>=3.1",
+    "cfbwrite>=1.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0", "ruff>=0.6", "mypy>=1.11"]
+
+[project.urls]
+Homepage = "https://github.com/GuilhermeMarini/selfiles"
+Source = "https://github.com/GuilhermeMarini/selfiles"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+selfiles = ["data/**/*.json", "py.typed"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
