@@ -304,7 +304,7 @@ class ScdPoint:
     ld_inst: str
     ln: str          # prefix + lnClass + inst, como o MMS soletra
     do: str
-    da: str          # 'stVal', ou 'Oper.ctlVal' quando vem de um SDI
+    da: str          # 'stVal', or 'Oper.ctlVal' when it comes from an SDI
     # How to take THIS bit out of the point's value, when the point carries
     # more than one (`sAddr="db:52A|52B?0:1:2:3"` on a DPS). `None` for a
     # plain address, which is the overwhelming majority -- 127,225 of the
@@ -423,7 +423,7 @@ def sel_short_addresses(scd_path: Path) -> dict:
     for ied in _iter_local(root, "IED"):
         name = ied.get("name") or ""
         bits: dict = {}
-        best: dict = {}          # BIT -> rank do candidato que esta valendo
+        best: dict = {}          # BIT -> rank of the candidate currently winning
         for ldev in _iter_local(ied, "LDevice"):
             ld_inst = ldev.get("inst") or ""
             for ln in list(_iter_local(ldev, "LN0")) + list(_iter_local(ldev, "LN")):

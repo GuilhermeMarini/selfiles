@@ -65,7 +65,7 @@ VarKind = Literal[
 class Source:
     file: str         # ex.: "SET_L1.TXT" (basename, sem path)
     lineno: int       # 1-based
-    raw_key: str      # chave bruta da linha (PROTSEL12 / SET01 / TR)
+    raw_key: str      # the line's raw key (PROTSEL12 / SET01 / TR)
 
 
 FieldKind = Literal["logic", "number", "enum", "string", "set_list"]

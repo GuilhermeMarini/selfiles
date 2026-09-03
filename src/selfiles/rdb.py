@@ -209,7 +209,7 @@ class GleEntry:
     name: str           # ex.: "GL1"
     filename: str       # ex.: "GL1.gle"
     rel_path: str       # ex.: "Relays/QPC1_TR1_UPC1/Misc/GL1.gle"
-    fs_path: Path       # caminho absoluto apos extracao
+    fs_path: Path       # absolute path, after extraction
 
 
 @dataclass
@@ -225,7 +225,7 @@ class RdbInfo:
     rdb_path: Path
     extract_dir: Path
     sha256: str
-    reused: bool                 # True se nao foi necessario re-escrever/extrair
+    reused: bool                 # True when nothing had to be rewritten
     relays: list[RelayEntry]
     # The name THIS upload carried, not the cache's: stored by hash, the file
     # on disk is the same for everyone, and without this every screen would

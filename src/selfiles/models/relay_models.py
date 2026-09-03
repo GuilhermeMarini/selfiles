@@ -105,8 +105,8 @@ class BlockDef:
     """One block type's definition. Only the fields consumed today are typed; the
     rest of the JSON (geometry, css_class and so on) sits in `extra`, for
     reading and for a future refactor that drives the renderer from here."""
-    key: str                              # chave canonica (ex.: "PCNDTIMER")
-    gle_xml_types: tuple[str, ...]        # 1+ tipos no XML que mapeiam pra esse bloco
+    key: str                              # canonical key (e.g. "PCNDTIMER")
+    gle_xml_types: tuple[str, ...]        # 1+ XML types mapping to this block
     kind: str                             # categoria ("timer", "latch", "gate"...)
     output_bit_pattern: str | None     # template / "IDENTITY" / None
     label_fallback: str | None = None

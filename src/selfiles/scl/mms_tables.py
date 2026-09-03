@@ -208,9 +208,9 @@ _SADDR_PREFIX = "db:"
 @dataclass(frozen=True)
 class BitRule:
     """How to take ONE bit out of the value of a point that carries several."""
-    alternatives: tuple    # valor do DA por combinacao dos bits
-    index: int             # qual dos nomes e' este bit
-    nbits: int             # quantos nomes o endereco tinha
+    alternatives: tuple    # the DA's value per combination of the bits
+    index: int             # which of the names this bit is
+    nbits: int             # how many names the address carried
 
 
 @dataclass(frozen=True)

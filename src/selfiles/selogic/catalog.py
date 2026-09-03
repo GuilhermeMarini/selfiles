@@ -31,7 +31,7 @@ class Group:
     label: str           # rotulo amigavel em PT-BR
     file_basename: str   # ex.: "SET_L1.TXT" (case-insensitive na resolucao)
     has_logic: bool      # se True, equacoes booleanas estao presentes
-    sort_order: int      # ordem nas abas
+    sort_order: int      # the order the tabs appear in
 
 
 # The catalogues are ordered lists, and the dashboard follows that order.

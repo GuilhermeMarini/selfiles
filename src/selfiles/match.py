@@ -47,7 +47,7 @@ _logger = logging.getLogger(__name__)
 @dataclass(frozen=True)
 class RelayIdentifiers:
     """The identifiers read out of one relay in the RDB."""
-    name: str                       # nome da pasta no RDB
+    name: str                       # the folder's name inside the RDB
     model: str | None            # ex.: "487E-3" do RELAYTYPE
     ip: str | None
     rid: str | None

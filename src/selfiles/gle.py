@@ -333,7 +333,7 @@ def render_group(group: ET.Element, in_counts: dict, out_counts: dict,
     ]
 
     cb_size = 8
-    cb_pad = 3   # gap entre checkbox e texto do label
+    cb_pad = 3   # gap between the checkbox and the label text
     cy = fy + GROUP_LABEL_BAND / 2 + 2
 
     if label:
