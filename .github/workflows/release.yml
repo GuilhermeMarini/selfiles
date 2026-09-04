@@ -1,0 +1,124 @@
+name: Release
+
+# Pushing a `v*` tag publishes that version to PyPI and opens a GitHub
+# release. Until this existed, publishing was a `python -m build` and a
+# `twine upload` typed by hand, which is the one step in this project with no
+# second chance: a PyPI version can be yanked but never reused, so a wheel
+# built from the wrong tree spends a number permanently.
+#
+# The order below is deliberate. Everything that can say no runs BEFORE the
+# upload, and the GitHub release is created after it -- a release row can be
+# deleted and written again, a PyPI file cannot.
+#
+# `cfbwrite` is published FIRST when both are being released: this package
+# pins `cfbwrite>=1.0`, and the dependency has to be on the index before a
+# release that needs a newer one.
+#
+# ONE-TIME SETUP, on PyPI and not here: this uses trusted publishing (OIDC),
+# so there is no API token stored in the repository at all. On
+# https://pypi.org/manage/project/selfiles/settings/publishing/ add a GitHub
+# publisher with owner `GuilhermeMarini`, repository `selfiles`, workflow
+# `release.yml`. Without it the upload step fails with `invalid-publisher`.
+# To use an API token instead, drop `id-token: write` and give the publish
+# step `password: ${{ secrets.PYPI_API_TOKEN }}`.
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write     # create the GitHub release
+  id-token: write     # PyPI trusted publishing
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: The tag and both version literals must agree
+        # This package carries its version TWICE -- `version` in
+        # pyproject.toml and `__version__` in `src/selfiles/__init__.py` --
+        # and the drift between them is silent and has a direction: a release
+        # bumps pyproject, the wheel goes to PyPI, and the installed package
+        # still answers the old number when asked.
+        #
+        # Checked here as well as in the suite because a tag can be pushed at
+        # any commit, including one CI never ran.
+        run: |
+          python - <<'PY'
+          import pathlib, re, sys, tomllib, os
+
+          tag = os.environ["GITHUB_REF_NAME"].removeprefix("v")
+          meta = tomllib.loads(pathlib.Path("pyproject.toml").read_text())
+          pyproject = meta["project"]["version"]
+          src = pathlib.Path("src/selfiles/__init__.py").read_text()
+          literal = re.search(r'^__version__ = "([^"]+)"', src, re.M).group(1)
+
+          if not (tag == pyproject == literal):
+              sys.exit(f"::error::tag v{tag}, pyproject.toml {pyproject}, "
+                       f"__version__ {literal} -- all three must agree")
+          print(f"v{tag} agrees with pyproject.toml and __version__")
+          PY
+
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip build twine
+          pip install -e ".[dev]"
+
+      - name: Lint
+        run: python -m ruff check .
+
+      - name: Types
+        run: python -m mypy
+
+      - name: Tests
+        # The suite runs again here rather than being trusted from the CI job
+        # on main, for the same reason the version check does: this tag may
+        # point at a commit that job never saw.
+        run: python -m pytest tests/ -q
+
+      - name: Build
+        run: |
+          rm -rf dist
+          python -m build
+          python -m twine check dist/*
+
+      - name: The wheel must carry py.typed, the licence and the registries
+        # The same guard the CI job runs, repeated for the artefact that is
+        # actually about to be uploaded.
+        #
+        # The data/ JSONs are the sharper risk: they are the per-model
+        # registries (relay models, wordbits, MMS tables) and they ship only
+        # because `[tool.setuptools.package-data]` names them. Losing that line
+        # produces a wheel that imports perfectly and then answers "no such
+        # relay model" for every relay -- a runtime failure in a substation,
+        # not a build failure here.
+        run: |
+          python - <<'PY'
+          import glob, zipfile, sys
+          names = zipfile.ZipFile(glob.glob("dist/*.whl")[0]).namelist()
+          missing = [w for w in ("selfiles/py.typed", "LICENSE")
+                     if not any(w in n for n in names)]
+          jsons = [n for n in names if n.startswith("selfiles/data/") and n.endswith(".json")]
+          if len(jsons) < 20:
+              missing.append(f"data/*.json (found {len(jsons)}, expected ~24)")
+          sys.exit(f"missing from the wheel: {missing}" if missing else 0)
+          PY
+
+      - name: Publish to PyPI
+        # Last of the steps that cannot be undone, and first of the two that
+        # publish anything.
+        uses: pypa/gh-action-pypi-publish@release/v1
+
+      - name: Publish the GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" \
+            --title "selfiles $GITHUB_REF_NAME" \
+            --generate-notes \
+            dist/*
