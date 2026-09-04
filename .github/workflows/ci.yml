@@ -1,0 +1,77 @@
+name: CI
+
+# selfiles reads and writes the file formats an SEL project is made of. The
+# `SET_D` round-trip contract -- `parse(b).serialize() == b` -- is the reason
+# a settings file may be rewritten at all. That property is what this job
+# exists to keep true.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # 3.10 is the floor `requires-python` declares; 3.14 is the newest
+        # release. Every version in between is run because a hole is where a
+        # real incompatibility hides.
+        python-version: ["3.10", "3.11", "3.12", "3.13", "3.14"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+      - name: Lint
+        run: python -m ruff check .
+      - name: Types
+        run: python -m mypy
+      - name: Tests
+        # One test skips here: it needs the factory ICD corpus, which is the
+        # manufacturer's files and is not in this repository. Set
+        # SELFILES_ICD_FIXTURES to run it locally.
+        run: python -m pytest tests/ -q
+
+  package:
+    # The package is on PyPI, so broken metadata would otherwise surface at
+    # upload time -- after the version number has already been spent, since a
+    # PyPI version can be yanked but never reused.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Build and check
+        run: |
+          python -m pip install --upgrade pip build twine
+          python -m build
+          python -m twine check dist/*
+      - name: The wheel must carry py.typed, the licence and the registries
+        # py.typed is what makes the annotations visible to a consumer's mypy;
+        # without it the library is untyped no matter how well it is annotated.
+        #
+        # The data/ JSONs are the sharper risk: they are the per-model
+        # registries (relay models, wordbits, MMS tables) and they ship only
+        # because `[tool.setuptools.package-data]` names them. Losing that line
+        # produces a wheel that imports perfectly and then answers "no such
+        # relay model" for every relay -- which is a runtime failure in a
+        # substation, not a build failure here.
+        run: |
+          python - <<'PY'
+          import glob, zipfile, sys
+          names = zipfile.ZipFile(glob.glob("dist/*.whl")[0]).namelist()
+          missing = [w for w in ("selfiles/py.typed", "LICENSE")
+                     if not any(w in n for n in names)]
+          jsons = [n for n in names if n.startswith("selfiles/data/") and n.endswith(".json")]
+          if len(jsons) < 20:
+              missing.append(f"data/*.json (found {len(jsons)}, expected ~24)")
+          sys.exit(f"missing from the wheel: {missing}" if missing else 0)
+          PY
