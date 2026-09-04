@@ -1,4 +1,6 @@
-"""The three places this package states which Pythons it supports must agree.
+"""Packaging claims that are stated more than once, and must not disagree.
+
+The three places this package states which Pythons it supports must agree.
 
 `requires-python` is the promise to whoever installs it, the CI matrix is what
 is actually measured, and the classifiers are what a reader believes without
@@ -11,6 +13,8 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
+
+from selfiles import __version__
 
 ROOT = Path(__file__).resolve().parent.parent
 PYPROJECT = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
@@ -47,3 +51,20 @@ def test_the_classifiers_name_exactly_what_ci_runs():
     claimed = {tuple(int(p) for p in m) for m in re.findall(
         r'"Programming Language :: Python :: (\d+)\.(\d+)"', PYPROJECT)}
     assert claimed == set(_ci_matrix())
+
+
+def test_the_two_version_literals_agree():
+    """`__version__` and pyproject's `version` are typed separately, and until
+    this test nothing compared them. The drift is silent and one-directional in
+    practice: a release bumps `pyproject.toml`, the wheel goes to PyPI, and the
+    package it installs still answers the old number when asked. A consumer
+    pinning `selfiles>=X` then gets a distribution whose own code denies the
+    version the index served. The project this library was extracted from
+    guards the same pair in `tests/test_version.py`; this is that guard, for a
+    package whose version is a literal rather than a `VERSION` file.
+    """
+    declared = re.search(r'^version\s*=\s*"([^"]+)"', PYPROJECT, re.M)
+    assert declared, "pyproject.toml must declare a literal version"
+    assert __version__ == declared[1], (
+        f"__init__.py says {__version__}, pyproject.toml says {declared[1]}"
+    )
