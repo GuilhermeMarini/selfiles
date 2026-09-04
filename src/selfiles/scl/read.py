@@ -87,21 +87,97 @@ def _collect_ip_by_ied(root: ET.Element) -> dict[str, str]:
     return out
 
 
+class ScdDocument:
+    """One SCD or ICD, parsed once, answering every question about it.
+
+    The five module-level functions below each did their own `ET.parse`, so a
+    caller asking the same file three things paid for three parses of it.
+    Measured on a real 22 MB substation SCD: `ET.parse` alone is 368 ms, and
+    the VLAN Mapper -- which calls `load_scd`,
+    `extract_gse_communication_map` and `extract_goose_subscriptions_by_ied`
+    on one path -- spent 1406 ms, of which 1104 ms (78%) was re-parsing the
+    same bytes. Through one document it is 670 ms.
+
+    Two constructors, because the callers genuinely differ:
+
+    - `load()` is the graceful one, for a file a USER supplied. A missing
+      file or invalid XML gives `None` and a log line, never an exception --
+      the behaviour `load_scd` and the two `extract_*` functions have always
+      had, and the reason the web tools can hand it whatever was uploaded.
+    - `parse()` is the strict one, for a file the PROJECT ships. It raises,
+      which is what `sel_da_fcs` and `sel_short_addresses` have always done:
+      they run in the offline table generator, where a file that will not
+      parse is a reason to stop rather than to write a partial table.
+
+    Nothing is cached between the methods: each walks the tree it is asked
+    about. It is the parse that was expensive, not the walking.
+    """
+
+    __slots__ = ("root", "path")
+
+    def __init__(self, root: ET.Element, path: Path | None = None) -> None:
+        self.root = root
+        self.path = path
+
+    @classmethod
+    def load(cls, scd_path: Path) -> ScdDocument | None:
+        """The document, or None with a log line on any IO or parsing error."""
+        p = Path(scd_path)
+        if not p.is_file():
+            _logger.warning("SCD nao encontrado: %s", p)
+            return None
+        try:
+            tree = ET.parse(str(p))
+        except (OSError, ET.ParseError) as e:
+            _logger.warning("erro lendo SCD %s: %s", p, e)
+            return None
+        return cls(tree.getroot(), p)
+
+    @classmethod
+    def parse(cls, scd_path: Path) -> ScdDocument:
+        """The document, raising `OSError`/`ET.ParseError` if it cannot be."""
+        p = Path(scd_path)
+        return cls(ET.parse(str(p)).getroot(), p)
+
+    # -- what an SCD can be asked -------------------------------------------
+
+    def ieds(self) -> list[IedInfo]:
+        """The IEDs with their identifying fields. See `load_scd`."""
+        return _ieds_from_root(self.root)
+
+    def gse_communication_map(self) -> dict[tuple[str, str, str], GseAddress]:
+        """`{(publisher_ied, ld_inst, cb_name): GseAddress}`. See
+        `extract_gse_communication_map`."""
+        return _gse_map_from_root(self.root)
+
+    def goose_subscriptions_by_ied(self) -> dict[str, list[GooseSubscription]]:
+        """`{ied_name: [GooseSubscription, ...]}`. See
+        `extract_goose_subscriptions_by_ied`."""
+        return _goose_subs_from_root(self.root)
+
+    def da_fcs(self) -> dict:
+        """`{IED: {(ld_inst, ln, do, da): fc}}`. See `sel_da_fcs`."""
+        return _da_fcs_from_root(self.root)
+
+    def short_addresses(self) -> dict:
+        """`{ied_name: {BIT_NAME: ScdPoint}}`. See `sel_short_addresses`."""
+        return _short_addresses_from_root(self.root)
+
+
 def load_scd(scd_path: Path) -> list[IedInfo]:
     """Parse an SCD and return its IEDs with their identifying fields.
 
     Returns an empty list, and logs, on any IO or parsing error.
+
+    Reading more than one thing out of the same file? Use `ScdDocument`: this
+    parses on every call, and on a real 22 MB SCD the parse is 368 ms against
+    about 100 ms of actual walking.
     """
-    p = Path(scd_path)
-    if not p.is_file():
-        _logger.warning("SCD nao encontrado: %s", p)
-        return []
-    try:
-        tree = ET.parse(str(p))
-    except (OSError, ET.ParseError) as e:
-        _logger.warning("erro lendo SCD %s: %s", p, e)
-        return []
-    root = tree.getroot()
+    doc = ScdDocument.load(scd_path)
+    return [] if doc is None else doc.ieds()
+
+
+def _ieds_from_root(root: ET.Element) -> list[IedInfo]:
     ip_by_ied = _collect_ip_by_ied(root)
     ieds: list[IedInfo] = []
     seen: set[str] = set()
@@ -191,18 +267,17 @@ def extract_gse_communication_map(scd_path: Path) -> dict[tuple[str, str, str], 
     Every <GSE ldInst=... cbName=...> under a <ConnectedAP iedName=...>
     becomes one entry, with its MAC/APPID/VLAN-ID/VLAN-PRIORITY. An absent
     optional field is None.
+
+    Parses on every call; see `ScdDocument` to read an SCD once.
     """
-    p = Path(scd_path)
+    doc = ScdDocument.load(scd_path)
+    return {} if doc is None else doc.gse_communication_map()
+
+
+def _gse_map_from_root(
+    root: ET.Element,
+) -> dict[tuple[str, str, str], GseAddress]:
     out: dict[tuple[str, str, str], GseAddress] = {}
-    if not p.is_file():
-        _logger.warning("SCD nao encontrado: %s", p)
-        return out
-    try:
-        tree = ET.parse(str(p))
-    except (OSError, ET.ParseError) as e:
-        _logger.warning("erro lendo SCD %s: %s", p, e)
-        return out
-    root = tree.getroot()
     for ap in _iter_local(root, "ConnectedAP"):
         publisher = ap.attrib.get("iedName") or ap.attrib.get("iedname") or ""
         if not publisher:
@@ -242,18 +317,17 @@ def extract_goose_subscriptions_by_ied(
     Duplicate subscriptions to the same (publisher, ldInst, cbName) are
     collapsed, keeping the first -- the others are just further intAddrs of
     the same dataset.
+
+    Parses on every call; see `ScdDocument` to read an SCD once.
     """
-    p = Path(scd_path)
+    doc = ScdDocument.load(scd_path)
+    return {} if doc is None else doc.goose_subscriptions_by_ied()
+
+
+def _goose_subs_from_root(
+    root: ET.Element,
+) -> dict[str, list[GooseSubscription]]:
     out: dict[str, list[GooseSubscription]] = {}
-    if not p.is_file():
-        _logger.warning("SCD nao encontrado: %s", p)
-        return out
-    try:
-        tree = ET.parse(str(p))
-    except (OSError, ET.ParseError) as e:
-        _logger.warning("erro lendo SCD %s: %s", p, e)
-        return out
-    root = tree.getroot()
     for ied_el in _iter_local(root, "IED"):
         ied_name = ied_el.attrib.get("name") or ""
         if not ied_name:
@@ -368,8 +442,17 @@ def sel_da_fcs(scd_path: Path) -> dict:
     A DA that does not resolve stays OUT of the dictionary. Guessing an FC
     produces an item the relay does not serve, and then the bit disappears in
     silence much further downstream.
+
+    Parses on every call, and unlike `load_scd` it RAISES on a bad file --
+    this is the offline generator's path, where a file that will not parse is
+    a reason to stop rather than to carry on with a partial table. See
+    `ScdDocument.parse` to read an ICD once and ask it both this and
+    `short_addresses`, which is what the generator does.
     """
-    root = ET.parse(scd_path).getroot()
+    return ScdDocument.parse(scd_path).da_fcs()
+
+
+def _da_fcs_from_root(root: ET.Element) -> dict:
     dos_by_lntype, fcs_by_dotype = _type_index(root)
     out: dict = {}
     for ied in _iter_local(root, "IED"):
@@ -417,8 +500,14 @@ def sel_short_addresses(scd_path: Path) -> dict:
     became the literal string `52A|52B?0:1:2:3` and the whole form vanished in
     silence: 55 of the 7,524 bits drawn across a substation's 25 relays, every
     one of them a breaker or disconnector position.
+
+    Parses on every call, and RAISES on a bad file, for the same reason
+    `sel_da_fcs` does. See `ScdDocument.parse` to read a file once.
     """
-    root = ET.parse(scd_path).getroot()
+    return ScdDocument.parse(scd_path).short_addresses()
+
+
+def _short_addresses_from_root(root: ET.Element) -> dict:
     out: dict = {}
     for ied in _iter_local(root, "IED"):
         name = ied.get("name") or ""

@@ -35,7 +35,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
 from selfiles._paths import PACKAGE_DATA  # noqa: E402
 from selfiles.scl.mms_tables import fc_rank as _fc_rank  # noqa: E402
-from selfiles.scl.read import sel_da_fcs, sel_short_addresses  # noqa: E402
+from selfiles.scl.read import ScdDocument  # noqa: E402
 
 # The factory ICD corpus is not in any repository (231 MB of vendor
 # files); point SELFILES_ICD_FIXTURES at a local copy.
@@ -106,9 +106,15 @@ def decorated_rows(scl_path: Path) -> dict:
     that disappears quietly later, when the live resolver checks it against
     the relay's own directory.
     """
-    fcs_by_ied = sel_da_fcs(scl_path)
+    # One parse for both questions: through the two module-level functions
+    # this ICD was parsed twice, and the parse is most of the cost.
+    # `parse()` and not `load()` on purpose -- the strictness is the point
+    # here, an ICD that will not parse must stop the generator rather than
+    # produce a table missing whatever was in it.
+    doc = ScdDocument.parse(scl_path)
+    fcs_by_ied = doc.da_fcs()
     best: dict = {}
-    for ied, points in sel_short_addresses(scl_path).items():
+    for ied, points in doc.short_addresses().items():
         fcs = fcs_by_ied.get(ied, {})
         for bit, p in points.items():
             rule = getattr(p, "rule", None)
