@@ -448,7 +448,7 @@
       },
       "default_ports": {
         "inputs": 3,
-        "outputs": 1
+        "outputs": 2
       },
       "evaluation": {
         "type": "passthrough_with_relay_output",

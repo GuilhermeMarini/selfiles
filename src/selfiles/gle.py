@@ -36,6 +36,9 @@ PORT_FIRST_OFFSET = {
     "RTRIG": 12,
     "AST": 24, "PLT": 24, "PCNDTIMER": 24,
     "PCN": 24, "ALT": 24,
+    # 4xx automation twins, from the relay profiles that declare them.
+    "ACNDTIMER": 24, "ACN": 24, "PST": 24,
+    "PSV": 12, "ASV": 12, "SQRT": 12,
     # 7xx (SELOGIC):
     "LATCH": 24, "TIMER": 24, "COUNTER": 24,
     "Connector": 6,
@@ -70,6 +73,14 @@ ELEMENT_MIN_SIZE = {
     "DIV": (36, 24),
     "MULT": (30, 18),
     "AST": (52, 24),       # cabe rotulo "AST01"
+    # 4xx automation twins. Each one shares its protection counterpart's
+    # drawing and takes its geometry from the profile that declares it.
+    "ACNDTIMER": (66, 36),
+    "ACN": (66, 36),
+    "PST": (52, 24),
+    "PSV": (52, 24),
+    "ASV": (52, 24),
+    "SQRT": (30, 18),
     "Connector": (24, 12),
 }
 
@@ -95,10 +106,20 @@ DEFAULT_PORTS = {
     "SUB": (2, 1),
     "DIV": (2, 1),
     "AST": (3, 2),
+    "ACNDTIMER": (3, 1),
+    "ACN": (3, 2),
+    "PST": (3, 2),
+    "PSV": (1, 1),
+    "ASV": (1, 1),
+    "SQRT": (1, 1),
     # 7xx (SELOGIC):
     "LATCH":   (2, 1),  # _LT##: S, R
     "TIMER":   (3, 1),  # _SV##: in, PU, DO
-    "COUNTER": (3, 1),  # _SC##: in, PV, R
+    # Measured across the 418 `.gle` of the reference corpus: every one of the
+    # 1486 COUNTER elements declares TWO outputs, never one. This said (3, 1),
+    # so a counter whose outputs the page left unconnected was drawn with one
+    # output pin instead of two. The SEL-487E profile already said (3, 2).
+    "COUNTER": (3, 2),  # _SC##: in, PV, R -> Q + R
     "Connector": (1, 1),
 }
 
@@ -859,57 +880,103 @@ def render_alt(info: dict, n_in: int, n_out: int) -> str:
     )
 
 
+def render_psv(info: dict, n_in: int, n_out: int) -> str:
+    """PSV / ASV (a SELOGIC variable): 1 input, 1 output.
+
+    The bit is the name itself -- `PSV05`, not `PSV05Q`. The `Q` the profile
+    lists in `output_sublabels` is the PIN's glyph, not part of the bit name,
+    which is the same distinction the notes draw for the latches: a latch
+    never carries a Q, a timer always does.
+
+    Declared by the SEL-451 profile (and `ASV` with three digits, because the
+    Relay Word runs to ASV256 while PSV stops at 64). Neither appears in the
+    418 `.gle` of the reference corpus, so this shape is drawn from the
+    profile's geometry rather than measured off a page -- but a block the
+    profile declares has to draw as something, and before this it drew as
+    nothing at all.
+    """
+    raw_name = info.get("name") or ""
+    name = raw_name.lstrip("_")
+    label = name or "PSV"
+    return render_gate(
+        info, max(n_in, 1), max(n_out, 1),
+        label=label, css_class="element-logic",
+        output_bit=name or None,
+    )
+
+
+#: Every block whose shape is a plain rect with a glyph in the middle:
+#: `(glyph, minimum inputs, css class)`. This was 13 `if t == ...` branches
+#: that differed only in these three values, which is what made it possible
+#: for a block declared in `relay_models/*.json` to have no branch at all and
+#: be drawn as nothing (see `_SHAPED_RENDERERS` and the corpus counts there).
+#:
+#: `SQRT` is here because the SEL-451 profile declares it; the corpus has one.
+GATE_GLYPHS: dict[str, tuple[str, int, str]] = {
+    "AND":  ("&",  2, "element-logic"),
+    "OR":   ("≥1", 2, "element-logic"),
+    "NOT":  ("¬",  1, "element-logic"),
+    "EQ":   ("=",  2, "element-logic"),
+    "NE":   ("≠",  2, "element-logic"),
+    "LT":   ("<",  2, "element-logic"),
+    "LE":   ("≤",  2, "element-logic"),
+    "GT":   (">",  2, "element-logic"),
+    "GE":   ("≥",  2, "element-logic"),
+    "MULT": ("×",  2, "element-logic"),
+    "ADD":  ("+",  2, "element-logic"),
+    "SUB":  ("−",  2, "element-logic"),
+    "DIV":  ("÷",  2, "element-logic"),
+    "SQRT": ("√",  1, "element-logic"),
+}
+
+#: Blocks with a shape of their own. The automation twins share their
+#: protection counterpart's drawing, which is what the 4xx GLE dialect means
+#: by the pairing: `PCN`/`ACN`, `PST`/`AST`, `PCNDTIMER`/`ACNDTIMER`,
+#: `PLT`/`ALT`, `PSV`/`ASV`.
+#:
+#: `ACN`, `PST` and `SQRT` had no entry at all until this table existed, so
+#: `render_element` fell through and returned "" for them -- an element the
+#: relay model declares, that the page positions, and that the viewer draws as
+#: NOTHING. Counted across the 418 `.gle` of the reference corpus: 8 `ACN`,
+#: 8 `PST`, 1 `SQRT`. Nothing said they were missing; a blank space on a logic
+#: diagram reads as "no logic here", which is worse than a wrong shape.
+_SHAPED_RENDERERS: dict = {
+    "PCNDTIMER": render_pcndtimer,
+    "ACNDTIMER": render_pcndtimer,
+    "RTRIG":     render_rtrig,
+    "PLT":       render_plt,
+    "ALT":       render_alt,
+    "PCN":       render_pcn,
+    "ACN":       render_pcn,
+    "AST":       render_ast,
+    "PST":       render_ast,
+    "PSV":       render_psv,
+    "ASV":       render_psv,
+    "LATCH":     render_latch_7xx,
+    "TIMER":     render_timer_7xx,
+    "COUNTER":   render_counter_7xx,
+}
+
+
 def render_element(info: dict, n_in: int, n_out: int,
                    symbol_width: int | None = None,
                    analog_group_key: str | None = None) -> str:
+    """Draw one element. `GATE_GLYPHS` covers everything whose shape is a
+    plain rect with a glyph in it; the rest have a shape of their own."""
     t = info["type"]
     if t == "SYMBOL":
         return render_symbol(info, width=symbol_width,
                              analog_group_key=analog_group_key)
-    if t == "AND":
-        return render_gate(info, max(n_in, 2), max(n_out, 1), "&", "element-logic")
-    if t == "OR":
-        return render_gate(info, max(n_in, 2), max(n_out, 1), "≥1", "element-logic")
-    if t == "NOT":
-        return render_gate(info, max(n_in, 1), max(n_out, 1), "¬", "element-logic")
-    if t == "PCNDTIMER":
-        return render_pcndtimer(info, n_in, n_out)
-    if t == "RTRIG":
-        return render_rtrig(info, n_in, n_out)
-    if t == "PLT":
-        return render_plt(info, n_in, n_out)
-    if t == "PCN":
-        return render_pcn(info, n_in, n_out)
-    if t == "ALT":
-        return render_alt(info, n_in, n_out)
-    if t == "EQ":
-        return render_gate(info, max(n_in, 2), max(n_out, 1), "=", "element-logic")
-    if t == "NE":
-        return render_gate(info, max(n_in, 2), max(n_out, 1), "≠", "element-logic")
-    if t == "LT":
-        return render_gate(info, max(n_in, 2), max(n_out, 1), "<", "element-logic")
-    if t == "LE":
-        return render_gate(info, max(n_in, 2), max(n_out, 1), "≤", "element-logic")
-    if t == "GT":
-        return render_gate(info, max(n_in, 2), max(n_out, 1), ">", "element-logic")
-    if t == "GE":
-        return render_gate(info, max(n_in, 2), max(n_out, 1), "≥", "element-logic")
-    if t == "AST":
-        return render_ast(info, n_in, n_out)
-    if t == "MULT":
-        return render_gate(info, max(n_in, 2), max(n_out, 1), "×", "element-logic")
-    if t == "ADD":
-        return render_gate(info, max(n_in, 2), max(n_out, 1), "+", "element-logic")
-    if t == "SUB":
-        return render_gate(info, max(n_in, 2), max(n_out, 1), "−", "element-logic")
-    if t == "DIV":
-        return render_gate(info, max(n_in, 2), max(n_out, 1), "÷", "element-logic")
-    if t == "LATCH":
-        return render_latch_7xx(info, n_in, n_out)
-    if t == "TIMER":
-        return render_timer_7xx(info, n_in, n_out)
-    if t == "COUNTER":
-        return render_counter_7xx(info, n_in, n_out)
+
+    glyph = GATE_GLYPHS.get(t)
+    if glyph is not None:
+        label, min_in, css = glyph
+        return render_gate(info, max(n_in, min_in), max(n_out, 1), label, css)
+
+    shaped = _SHAPED_RENDERERS.get(t)
+    if shaped is not None:
+        return shaped(info, n_in, n_out)
+
     if t == "Connector":
         # The name in place of the `→`: it is what lets a person see that
         # the two ends are the same network, and what gives the evaluator the
@@ -918,8 +985,8 @@ def render_element(info: dict, n_in: int, n_out: int,
         return render_gate(info, max(n_in, 1), max(n_out, 1),
                            label or "→", "element-gate",
                            connector=label or None)
-    if t in ("Block", "Text"):
-        return ""
+    # `Block` and `Text` are page furniture, and `Image` is a bitmap the GLE
+    # embeds -- none of them is logic, and none is drawn here.
     return ""
 
 
