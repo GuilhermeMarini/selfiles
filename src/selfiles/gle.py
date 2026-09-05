@@ -21,6 +21,8 @@ import xml.etree.ElementTree as ET
 from collections import defaultdict
 from pathlib import Path
 
+from selfiles.scl._xmlsafe import reject_dtd_in_bytes
+
 # Espacamento padrao entre portas verticais (em px do canvas GLE)
 PORT_SPACING = 12
 PORT_BOT_PAD = 6     # padding apos a ultima porta
@@ -127,6 +129,11 @@ DEFAULT_PORTS = {
 def parse_gle(path: Path) -> ET.Element:
     raw = path.read_bytes().decode("latin-1")
     raw = raw.replace('encoding="utf-8"', 'encoding="iso-8859-1"', 1)
+    # A GLE arrives inside an RDB somebody uploaded, so it is no more trusted
+    # than an SCD. Checked on the post-swap bytes, which are self-consistent
+    # -- the declaration says iso-8859-1 and the bytes are latin-1 -- so the
+    # scan reads the prolog the same way the parse below will.
+    reject_dtd_in_bytes(raw.encode("latin-1"))
     return ET.fromstring(raw)
 
 

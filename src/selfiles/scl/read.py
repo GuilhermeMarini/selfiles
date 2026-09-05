@@ -38,6 +38,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from xml.etree import ElementTree as ET
 
+from selfiles.scl._xmlsafe import DtdNotAllowed, reject_dtd_in_file
 from selfiles.scl.mms_tables import da_rank, parse_saddr
 
 _logger = logging.getLogger(__name__)
@@ -127,7 +128,13 @@ class ScdDocument:
             _logger.warning("SCD nao encontrado: %s", p)
             return None
         try:
+            # Before the parser, never after: a DTD's entities expand DURING
+            # the parse and there is no half-way to stop at.
+            reject_dtd_in_file(p)
             tree = ET.parse(str(p))
+        except DtdNotAllowed as e:
+            _logger.warning("SCD recusado %s: %s", p, e)
+            return None
         except (OSError, ET.ParseError) as e:
             _logger.warning("erro lendo SCD %s: %s", p, e)
             return None
@@ -135,8 +142,13 @@ class ScdDocument:
 
     @classmethod
     def parse(cls, scd_path: Path) -> ScdDocument:
-        """The document, raising `OSError`/`ET.ParseError` if it cannot be."""
+        """The document, raising if it cannot be read.
+
+        `OSError` and `ET.ParseError` as before, plus `DtdNotAllowed` for a
+        file that declares a DTD.
+        """
         p = Path(scd_path)
+        reject_dtd_in_file(p)
         return cls(ET.parse(str(p)).getroot(), p)
 
     # -- what an SCD can be asked -------------------------------------------

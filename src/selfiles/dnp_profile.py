@@ -42,6 +42,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from xml.etree import ElementTree as ET
 
+from selfiles.scl._xmlsafe import reject_dtd_in_bytes
+
 # The schema namespaces seen in the corpus. Read the element's own namespace
 # rather than matching either of these: a third revision should degrade to
 # "parsed fine" and not to "no points found".
@@ -112,6 +114,8 @@ def _text(elem, ns: str, tag: str) -> str:
 
 def _parse_xml(data: bytes, source_name: str = "") -> DnpProfile:
     try:
+        # The profile comes out of a vendor zip the user chose.
+        reject_dtd_in_bytes(data)
         root = ET.fromstring(data)
     except ET.ParseError as e:
         raise DnpProfileError(f"XML ilegível: {e}") from e
