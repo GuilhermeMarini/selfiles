@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 
-from selfiles.models import wordbits
+from sellib.models import wordbits
 
 
 def _write(tmp_path, name, payload):

@@ -25,7 +25,7 @@ from pathlib import Path
 import cfbwrite as cfb
 import pytest
 
-from selfiles import rdb, rdb_cache
+from sellib import rdb, rdb_cache
 
 #: A GLE is not decoration here. `_scan_existing` builds a `RelayEntry` only
 #: from `.gle` streams, and `process_upload` sets `reused = bool(relays)` -- so

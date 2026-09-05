@@ -7,7 +7,7 @@ import zipfile
 
 import pytest
 
-from selfiles import dnp_profile
+from sellib import dnp_profile
 
 _NS_2010 = "http://www.dnp3.org/DNP3/DeviceProfile/Jan2010"
 _NS_2016 = "http://www.dnp3.org/DNP3/DeviceProfile/April2016"

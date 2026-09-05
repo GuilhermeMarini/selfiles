@@ -27,7 +27,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Literal
 
-from selfiles.selogic import parser as sp
+from sellib.selogic import parser as sp
 
 Verdict = Literal[
     "EQUAL",

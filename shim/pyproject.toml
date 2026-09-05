@@ -1,0 +1,31 @@
+# The `selfiles` name on PyPI, kept alive as a forwarder to `SELlib`.
+#
+# Built from this subdirectory, never from the repository root: the root
+# pyproject.toml builds `SELlib` itself, and the two must not be confused for
+# one another by a `python -m build .` typed in the wrong place.
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "selfiles"
+version = "1.1.2"
+description = "Renamed to SELlib -- this release only forwards `import selfiles` to `import sellib`"
+readme = "README.md"
+requires-python = ">=3.10"
+license = "AGPL-3.0-or-later"
+license-files = ["LICENSE"]
+authors = [{ name = "Guilherme Marini" }]
+classifiers = [
+    "Development Status :: 7 - Inactive",
+    "Programming Language :: Python :: 3",
+    "Topic :: Scientific/Engineering",
+]
+dependencies = ["SELlib>=2.0.0"]
+
+[project.urls]
+Homepage = "https://github.com/GuilhermeMarini/sellib"
+Source = "https://github.com/GuilhermeMarini/sellib"
+
+[tool.setuptools.packages.find]
+where = ["src"]

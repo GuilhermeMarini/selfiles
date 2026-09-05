@@ -76,7 +76,7 @@ def writable_data_dir(name: str) -> Path:
     """
     if _user_data_dir is None:
         raise RuntimeError(
-            "selfiles.configure(user_data_dir=...) was never called, so there "
+            "sellib.configure(user_data_dir=...) was never called, so there "
             "is nowhere to write a supplied profile."
         )
     out = _user_data_dir / name
@@ -88,4 +88,4 @@ def cache_dir() -> Path:
     """Where RDB extractions live. Content-addressed, shared, host-owned."""
     if _cache_dir is not None:
         return _cache_dir
-    return Path(tempfile.gettempdir()) / "selfiles" / "rdb"
+    return Path(tempfile.gettempdir()) / "sellib" / "rdb"

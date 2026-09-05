@@ -21,7 +21,7 @@ from __future__ import annotations
 
 import pytest
 
-from selfiles.selogic import compare as lc
+from sellib.selogic import compare as lc
 
 
 def _v(result) -> str:

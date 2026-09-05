@@ -11,7 +11,7 @@ heard of is at least as likely to be our gap as the user's mistake.
 Two sources feed one file per model in ``data/wordbits/<MODEL>.json``, and they
 answer different questions:
 
-* **The SEL DNP3 Device Profile** (``selfiles.dnp_profile``, seeded by
+* **The SEL DNP3 Device Profile** (``sellib.dnp_profile``, seeded by
   ``tools/wordbits_from_dnp_profile.py`` from the zips in ``docs/``) gives the
   vendor's own default point list per block: ``kinds.BI``, ``kinds.BO`` and so
   on. For AO and CO this is the whole domain; for BO it is the whole domain
@@ -49,7 +49,7 @@ import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from selfiles import _paths
+from sellib import _paths
 
 _logger = logging.getLogger(__name__)
 

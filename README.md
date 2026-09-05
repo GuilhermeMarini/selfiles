@@ -1,16 +1,21 @@
-# selfiles
+# SELlib
 
 Read and write the file formats an SEL protective relay project is made of —
 the ones AcSELerator QuickSet produces.
 
 Nothing here talks to a relay, opens a socket, or knows what a web request is.
 
-```python
-import selfiles
-from selfiles.rdb import process_upload
-from selfiles.dnp_map import parse, discover
+> **Renamed.** This library was published as `selfiles` for 1.x. From 2.0.0 it
+> is `SELlib`, and the import moved with it — `import sellib`, not
+> `import selfiles`. Nothing else changed in 2.0.0; the major is the rename.
+> `selfiles` 1.1.1 stays on PyPI and is not maintained.
 
-selfiles.configure(user_data_dir="~/.pacct/data", cache_dir="/var/cache/rdb")
+```python
+import sellib
+from sellib.rdb import process_upload
+from sellib.dnp_map import parse, discover
+
+sellib.configure(user_data_dir="~/.pacct/data", cache_dir="/var/cache/rdb")
 
 info = process_upload(open("substation.rdb", "rb").read(), "substation.rdb")
 for relay in info.relays:
@@ -19,19 +24,19 @@ for relay in info.relays:
 
 | module | what it reads |
 |---|---|
-| `selfiles.rdb`, `.rdb_cache` | the RDB (an OLE compound database): relays, models, addresses, extracted into a content-addressed cache |
-| `selfiles.settings` | `SET_*.TXT` relay settings |
-| `selfiles.dnp_map` | `SET_D<n>.TXT`, the DNP3 point map |
-| `selfiles.gle` | QuickSet logic diagrams — parse, and render a page to SVG |
-| `selfiles.selogic` | SELOGIC equations: parse, compare by equivalence, normalise settings |
-| `selfiles.models` | per-model registries: block conventions, and valid Relay Word names |
-| `selfiles.scl` | IEC 61850 SCL/SCD: IEDs, GOOSE, VLANs, ExtRefs, functional constraints, SEL `sAddr` |
-| `selfiles.match` | cross-match an RDB's relays against an SCD's IEDs |
-| `selfiles.dnp_profile` | SEL DNP3 device profile bundles |
+| `sellib.rdb`, `.rdb_cache` | the RDB (an OLE compound database): relays, models, addresses, extracted into a content-addressed cache |
+| `sellib.settings` | `SET_*.TXT` relay settings |
+| `sellib.dnp_map` | `SET_D<n>.TXT`, the DNP3 point map |
+| `sellib.gle` | QuickSet logic diagrams — parse, and render a page to SVG |
+| `sellib.selogic` | SELOGIC equations: parse, compare by equivalence, normalise settings |
+| `sellib.models` | per-model registries: block conventions, and valid Relay Word names |
+| `sellib.scl` | IEC 61850 SCL/SCD: IEDs, GOOSE, VLANs, ExtRefs, functional constraints, SEL `sAddr` |
+| `sellib.match` | cross-match an RDB's relays against an SCD's IEDs |
+| `sellib.dnp_profile` | SEL DNP3 device profile bundles |
 
 ## The one contract to know about
 
-`selfiles.dnp_map` guarantees `parse(b).serialize() == b`, byte for byte, for
+`sellib.dnp_map` guarantees `parse(b).serialize() == b`, byte for byte, for
 every `SET_D` in the reference corpus. These bytes go back into a protection
 relay: a settings file that round-trips imperfectly is a relay that behaves in
 a way nobody asked for. The `0x1C` field separator lives *inside* the line,
@@ -50,7 +55,7 @@ at runtime without shipping a new release and without repeating the rest.
 ## Install
 
 ```bash
-pip install selfiles
+pip install sellib
 ```
 
 Python 3.10+. Extracted from

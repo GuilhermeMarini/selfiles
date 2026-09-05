@@ -28,7 +28,7 @@ from __future__ import annotations
 
 import pytest
 
-from selfiles.selogic import parser as sp
+from sellib.selogic import parser as sp
 
 
 def _repr(expr: str, dialect: sp.Dialect) -> str:

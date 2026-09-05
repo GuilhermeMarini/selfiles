@@ -3,8 +3,8 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "selfiles"
-version = "1.1.1"
+name = "SELlib"
+version = "2.0.0"
 description = "Read and write the file formats an SEL protective relay project is made of: RDB, SET_*.TXT, DNP3 maps, GLE logic diagrams, SELOGIC and IEC 61850 SCL"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -34,14 +34,14 @@ dependencies = [
 dev = ["pytest>=8.0", "ruff>=0.6", "mypy>=1.11"]
 
 [project.urls]
-Homepage = "https://github.com/GuilhermeMarini/selfiles"
-Source = "https://github.com/GuilhermeMarini/selfiles"
+Homepage = "https://github.com/GuilhermeMarini/sellib"
+Source = "https://github.com/GuilhermeMarini/sellib"
 
 [tool.setuptools.packages.find]
 where = ["src"]
 
 [tool.setuptools.package-data]
-selfiles = ["data/**/*.json", "py.typed"]
+sellib = ["data/**/*.json", "py.typed"]
 
 [tool.pytest.ini_options]
 pythonpath = ["src"]

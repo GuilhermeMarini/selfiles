@@ -9,8 +9,8 @@ ignore = ["E501"]
 [lint.per-file-ignores]
 # A tokenizer table: `toks.append(Tok(...)); i += 1; continue` on one line is
 # what makes the 14 branches read as the table they are.
-"src/selfiles/selogic/parser.py" = ["E702"]
-"src/selfiles/selogic/model.py" = ["E402"]
+"src/sellib/selogic/parser.py" = ["E702"]
+"src/sellib/selogic/model.py" = ["E402"]
 
 [lint.isort]
-known-first-party = ["selfiles"]
+known-first-party = ["sellib"]

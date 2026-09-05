@@ -36,10 +36,10 @@ import logging
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from selfiles import rdb as rdb_loader
-from selfiles.models import relay_models
-from selfiles.scl import read as scd_loader
-from selfiles.scl.read import IedInfo
+from sellib import rdb as rdb_loader
+from sellib.models import relay_models
+from sellib.scl import read as scd_loader
+from sellib.scl.read import IedInfo
 
 _logger = logging.getLogger(__name__)
 

@@ -6,7 +6,7 @@ block, so it is the authority for the AO, CO and (with the Relay Word) BO
 domains. It is *not* the authority for BI: a BI point maps to any Relay Word
 bit and the profile lists only the factory default map, so ``bits`` -- seeded
 separately by ``tools/wordbits_from_glv_cache.py`` -- stays what BI is judged
-against. See ``selfiles/models/wordbits.py`` for the measured numbers.
+against. See ``sellib/models/wordbits.py`` for the measured numbers.
 
     python3 tools/wordbits_from_dnp_profile.py docs/*.zip
     python3 tools/wordbits_from_dnp_profile.py --check docs/*.zip
@@ -25,9 +25,9 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
-from selfiles import dnp_profile  # noqa: E402
-from selfiles._paths import PACKAGE_DATA  # noqa: E402
-from selfiles.models.wordbits import (  # noqa: E402
+from sellib import dnp_profile  # noqa: E402
+from sellib._paths import PACKAGE_DATA  # noqa: E402
+from sellib.models.wordbits import (  # noqa: E402
     KINDS,
     base_model,
     entry_from_profiles,

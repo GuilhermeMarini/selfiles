@@ -30,7 +30,7 @@ What that list IS and IS NOT, because getting this wrong is the whole risk:
   (``tools/wordbits_from_glv_cache.py``) remains the authority there.
 
 So a profile is a source of per-kind name sets, not a replacement for the Relay
-Word. ``selfiles.models.wordbits`` merges both and decides per kind which it trusts.
+Word. ``sellib.models.wordbits`` merges both and decides per kind which it trusts.
 """
 
 from __future__ import annotations
@@ -42,7 +42,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from xml.etree import ElementTree as ET
 
-from selfiles.scl._xmlsafe import reject_dtd_in_bytes
+from sellib.scl._xmlsafe import reject_dtd_in_bytes
 
 # The schema namespaces seen in the corpus. Read the element's own namespace
 # rather than matching either of these: a third revision should degrade to

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from tests.test_set_dnp import SAMPLE_751
 
-from selfiles import dnp_map as set_dnp
+from sellib import dnp_map as set_dnp
 
 
 def _make_extraction(tmp_path):

@@ -4,7 +4,7 @@ Each relay in an RDB carries one ``SET_D<n>.TXT`` per DNP session. The file is
 a settings file with an ``[INFO]`` header and a single ``[D<n>]`` section whose
 data lines are ``KEY,"VALUE"`` followed by ``0x1C`` (File Separator) and CRLF.
 
-This module is deliberately NOT built on ``selfiles.settings``: that
+This module is deliberately NOT built on ``sellib.settings``: that
 one treats the trailing ``0x1C`` as part of the value, which is fine for
 reading and fatal for writing. Here round-trip fidelity is the contract --
 ``parse(data).serialize() == data`` for every SET_D in the reference RDBs --
@@ -315,7 +315,7 @@ def discover(extract_dir: Path) -> list[DnpRelay]:
     """Find every relay with a DNP map inside an extracted RDB.
 
     This walks the extraction instead of reusing ``RdbInfo.relays`` on
-    purpose: ``selfiles.rdb`` only builds a ``RelayEntry`` for a relay
+    purpose: ``sellib.rdb`` only builds a ``RelayEntry`` for a relay
     that owns a ``.gle`` file, which silently drops data concentrators like the
     SEL-2440 -- exactly the devices whose DNP map someone wants to edit.
     """

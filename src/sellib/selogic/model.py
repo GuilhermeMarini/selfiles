@@ -40,15 +40,15 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal
 
-from selfiles.selogic import parser as sp
-from selfiles.selogic.catalog import (
+from sellib.selogic import parser as sp
+from sellib.selogic.catalog import (
     Family,
     Group,
     dialect_for_family,
     find_group_by_filename,
     groups_for_family,
 )
-from selfiles.settings import (
+from sellib.settings import (
     ParsedSettings,
     parse_relay_settings_dir,
 )

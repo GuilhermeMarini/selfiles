@@ -32,7 +32,7 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
-from selfiles import _paths
+from sellib import _paths
 
 _SHA_RE = re.compile(r"^[0-9a-f]{64}$")
 

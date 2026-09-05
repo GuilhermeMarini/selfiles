@@ -15,10 +15,17 @@ name: Release
 # release that needs a newer one.
 #
 # ONE-TIME SETUP, on PyPI and not here: this uses trusted publishing (OIDC),
-# so there is no API token stored in the repository at all. On
-# https://pypi.org/manage/project/selfiles/settings/publishing/ add a GitHub
-# publisher with owner `GuilhermeMarini`, repository `selfiles`, workflow
-# `release.yml`. Without it the upload step fails with `invalid-publisher`.
+# so there is no API token stored in the repository at all. `SELlib` is a NEW
+# project -- there is nothing on PyPI to attach a publisher to yet -- so the
+# first release needs a PENDING publisher, added at
+# https://pypi.org/manage/account/publishing/ with PyPI project `SELlib`,
+# owner `GuilhermeMarini`, repository `sellib`, workflow `release.yml`. It
+# becomes an ordinary publisher the moment the first upload succeeds, and
+# from then on it is managed at
+# https://pypi.org/manage/project/sellib/settings/publishing/. Renaming the
+# GitHub repository invalidates a publisher that names the old one, which is
+# why this had to be redone when `selfiles` became `SELlib`. Without it the
+# upload step fails with `invalid-publisher`.
 # To use an API token instead, drop `id-token: write` and give the publish
 # step `password: ${{ secrets.PYPI_API_TOKEN }}`.
 
@@ -41,7 +48,7 @@ jobs:
 
       - name: The tag and both version literals must agree
         # This package carries its version TWICE -- `version` in
-        # pyproject.toml and `__version__` in `src/selfiles/__init__.py` --
+        # pyproject.toml and `__version__` in `src/sellib/__init__.py` --
         # and the drift between them is silent and has a direction: a release
         # bumps pyproject, the wheel goes to PyPI, and the installed package
         # still answers the old number when asked.
@@ -55,7 +62,7 @@ jobs:
           tag = os.environ["GITHUB_REF_NAME"].removeprefix("v")
           meta = tomllib.loads(pathlib.Path("pyproject.toml").read_text())
           pyproject = meta["project"]["version"]
-          src = pathlib.Path("src/selfiles/__init__.py").read_text()
+          src = pathlib.Path("src/sellib/__init__.py").read_text()
           literal = re.search(r'^__version__ = "([^"]+)"', src, re.M).group(1)
 
           if not (tag == pyproject == literal):
@@ -101,9 +108,9 @@ jobs:
           python - <<'PY'
           import glob, zipfile, sys
           names = zipfile.ZipFile(glob.glob("dist/*.whl")[0]).namelist()
-          missing = [w for w in ("selfiles/py.typed", "LICENSE")
+          missing = [w for w in ("sellib/py.typed", "LICENSE")
                      if not any(w in n for n in names)]
-          jsons = [n for n in names if n.startswith("selfiles/data/") and n.endswith(".json")]
+          jsons = [n for n in names if n.startswith("sellib/data/") and n.endswith(".json")]
           if len(jsons) < 20:
               missing.append(f"data/*.json (found {len(jsons)}, expected ~24)")
           sys.exit(f"missing from the wheel: {missing}" if missing else 0)
@@ -119,6 +126,6 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release create "$GITHUB_REF_NAME" \
-            --title "selfiles $GITHUB_REF_NAME" \
+            --title "SELlib $GITHUB_REF_NAME" \
             --generate-notes \
             dist/*

@@ -15,7 +15,7 @@ import threading
 from dataclasses import dataclass
 from pathlib import Path
 
-from selfiles import _paths
+from sellib import _paths
 
 _logger = logging.getLogger(__name__)
 

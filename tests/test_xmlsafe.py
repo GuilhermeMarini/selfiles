@@ -22,14 +22,14 @@ from __future__ import annotations
 
 import pytest
 
-from selfiles.dnp_profile import parse as parse_dnp_profile
-from selfiles.gle import parse_gle
-from selfiles.scl._xmlsafe import (
+from sellib.dnp_profile import parse as parse_dnp_profile
+from sellib.gle import parse_gle
+from sellib.scl._xmlsafe import (
     DtdNotAllowed,
     reject_dtd_in_bytes,
     reject_dtd_in_file,
 )
-from selfiles.scl.read import ScdDocument, load_scd
+from sellib.scl.read import ScdDocument, load_scd
 
 _BOMB = (
     b'<?xml version="1.0"?><!DOCTYPE SCL [\n'

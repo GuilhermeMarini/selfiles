@@ -26,7 +26,7 @@ from xml.etree import ElementTree as ET
 
 import pytest
 
-from selfiles.gle import (
+from sellib.gle import (
     CSS,
     DEFAULT_FIRST_OFFSET,
     DEFAULT_PORTS,
@@ -36,7 +36,7 @@ from selfiles.gle import (
     render_element,
 )
 
-MODELS_DIR = Path(__file__).resolve().parent.parent / "src" / "selfiles" / "data" / "relay_models"
+MODELS_DIR = Path(__file__).resolve().parent.parent / "src" / "sellib" / "data" / "relay_models"
 
 #: `(model, xml_type, field)` -> why the profile and the renderer differ.
 #: Add a line only with a reason; an entry here is a decision, not a snooze.

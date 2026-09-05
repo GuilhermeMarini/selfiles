@@ -12,7 +12,7 @@ The common layout, whatever the relay family:
 
 This module is deliberately *family-agnostic*. It only tokenises into
 structured lines. What each line MEANS (a latch slot, a SET/RST pair, an
-equation with `:=`) is `selfiles.selogic.model`'s problem, not this one's.
+equation with `:=`) is `sellib.selogic.model`'s problem, not this one's.
 
 Public API:
 

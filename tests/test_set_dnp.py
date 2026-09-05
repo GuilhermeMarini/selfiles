@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from selfiles import dnp_map as set_dnp
+from sellib import dnp_map as set_dnp
 
 # Minimal SET_D from 411L: CRLF in header, 0x1C + CRLF in data lines,
 # index without padding, empty slot as "".

@@ -13,8 +13,8 @@ from pathlib import Path
 
 import pytest
 
-from selfiles._paths import PACKAGE_DATA
-from selfiles.scl import mms_tables
+from sellib._paths import PACKAGE_DATA
+from sellib.scl import mms_tables
 
 
 def test_the_451_table_loads_and_maps_a_known_latch():
@@ -123,14 +123,14 @@ def test_no_bit_with_a_non_co_candidate_ends_up_on_a_co_item():
     import json
 
     # The factory ICD corpus is 231 MB of vendor files and is not in any
-    # repository. Point SELFILES_ICD_FIXTURES at it to run this; otherwise it
+    # repository. Point SELLIB_ICD_FIXTURES at it to run this; otherwise it
     # skips, which is the same arrangement it had before the move.
     import os
 
-    fixtures = Path(os.environ.get("SELFILES_ICD_FIXTURES", "fixtures"))
+    fixtures = Path(os.environ.get("SELLIB_ICD_FIXTURES", "fixtures"))
     src_path = fixtures / "ICD files" / "SEL" / "wordbits.json"
     if not src_path.exists():
-        pytest.skip("ICD corpus unavailable; set SELFILES_ICD_FIXTURES")
+        pytest.skip("ICD corpus unavailable; set SELLIB_ICD_FIXTURES")
 
     gen = _load_generator()
     mms_tables.invalidate()
@@ -168,12 +168,12 @@ class TestDaVocabulary:
     """A GLV bit is a BOOLEAN. Anything else read as one is a fabrication."""
 
     def test_boolean_status_das_are_the_ones_the_glv_can_paint(self):
-        from selfiles.scl.mms_tables import is_boolean_status
+        from sellib.scl.mms_tables import is_boolean_status
         for da in ("stVal", "general", "phsA", "phsB", "phsC", "neut", "neg"):
             assert is_boolean_status(da), da
 
     def test_floats_counters_settings_quality_and_controls_are_not(self):
-        from selfiles.scl.mms_tables import is_boolean_status
+        from sellib.scl.mms_tables import is_boolean_status
         for da in ("instMag.f", "phsA.instCVal.mag.f", "actVal", "setVal",
                    "setTm", "q", "valWTr.posVal", "Oper.ctlVal",
                    "Oper$ctlVal", "dirGeneral"):
@@ -182,12 +182,12 @@ class TestDaVocabulary:
     def test_both_separators_parse_the_same(self):
         """SCL descends an SDI with '.', MMS spells every level with '$'; the
         SCD source and the shipped table source use one each."""
-        from selfiles.scl.mms_tables import da_parts
+        from sellib.scl.mms_tables import da_parts
         assert da_parts("Oper.ctlVal") == da_parts("Oper$ctlVal")
         assert da_parts("stVal") == ("stVal",)
 
     def test_status_beats_anything_else_beats_a_control(self):
-        from selfiles.scl.mms_tables import da_rank
+        from sellib.scl.mms_tables import da_rank
         assert da_rank("stVal") < da_rank("actVal") < da_rank("Oper.ctlVal")
         assert da_rank("general") == da_rank("stVal")
         assert da_rank("Oper.ctlVal.f") == da_rank("Oper.ctlVal")
@@ -215,13 +215,13 @@ class TestDaVocabulary:
 class TestParseSaddr:
 
     def test_a_plain_address_is_one_name_and_no_rule(self):
-        from selfiles.scl.mms_tables import parse_saddr
+        from sellib.scl.mms_tables import parse_saddr
         spec = parse_saddr("db:PLT01")
         assert spec.names == ("PLT01",)
         assert spec.alternatives is None
 
     def test_a_double_bit_address_yields_both_names_and_the_alternatives(self):
-        from selfiles.scl.mms_tables import parse_saddr
+        from sellib.scl.mms_tables import parse_saddr
         spec = parse_saddr("db:52A|52B?0:1:2:3")
         assert spec.names == ("52A", "52B")
         assert spec.alternatives == (0, 1, 2, 3)
@@ -229,17 +229,17 @@ class TestParseSaddr:
     def test_a_single_bit_address_can_carry_alternatives_too(self):
         """`52A?1:2` is the same Dbpos read from a single auxiliary contact:
         open=1, closed=2."""
-        from selfiles.scl.mms_tables import parse_saddr
+        from sellib.scl.mms_tables import parse_saddr
         spec = parse_saddr("db:52A?1:2")
         assert spec.names == ("52A",)
         assert spec.alternatives == (1, 2)
 
     def test_names_are_upper_cased_like_the_plain_ones(self):
-        from selfiles.scl.mms_tables import parse_saddr
+        from sellib.scl.mms_tables import parse_saddr
         assert parse_saddr("db:sv06|sv05?0:1:2:3").names == ("SV06", "SV05")
 
     def test_a_non_db_address_is_not_one_of_ours(self):
-        from selfiles.scl.mms_tables import parse_saddr
+        from sellib.scl.mms_tables import parse_saddr
         assert parse_saddr("imm:10000") is None
         assert parse_saddr("dbi:FID") is None
         assert parse_saddr("") is None
@@ -247,16 +247,16 @@ class TestParseSaddr:
     def test_an_alternative_count_that_is_not_two_to_the_n_is_refused(self):
         """A invariante vale em 5.025 de 5.025 no corpus. Uma forma que a
         quebra e' desconhecida, e adivinhar nela pinta bit errado."""
-        from selfiles.scl.mms_tables import parse_saddr
+        from sellib.scl.mms_tables import parse_saddr
         assert parse_saddr("db:52A|52B?0:1:2") is None
         assert parse_saddr("db:52A?1:2:3") is None
 
     def test_a_non_numeric_alternative_is_refused(self):
-        from selfiles.scl.mms_tables import parse_saddr
+        from sellib.scl.mms_tables import parse_saddr
         assert parse_saddr("db:52A?ON:OFF") is None
 
     def test_an_empty_name_is_refused(self):
-        from selfiles.scl.mms_tables import parse_saddr
+        from sellib.scl.mms_tables import parse_saddr
         assert parse_saddr("db:?1:2") is None
         assert parse_saddr("db:52A|?0:1:2:3") is None
 
@@ -271,11 +271,11 @@ class TestDecodeBit:
     """
 
     def _rule(self, sa, i):
-        from selfiles.scl.mms_tables import parse_saddr
+        from sellib.scl.mms_tables import parse_saddr
         return parse_saddr(sa).rule_for(i)
 
     def test_a_dbpos_bit_string_splits_into_the_two_named_bits(self):
-        from selfiles.scl.mms_tables import decode_bit
+        from sellib.scl.mms_tables import decode_bit
         a = self._rule("db:52A|52B?0:1:2:3", 0)   # 52A
         b = self._rule("db:52A|52B?0:1:2:3", 1)   # 52B
         assert (decode_bit(a, "10"), decode_bit(b, "10")) == (1, 0)  # fechado
@@ -286,13 +286,13 @@ class TestDecodeBit:
     def test_an_integer_status_matches_its_alternative(self):
         """`RELAY_EN?5:1` on a `Mod$stVal`: 5=off, 1=on. py61850 returns an
         INTEGER as an int, not as a bit string."""
-        from selfiles.scl.mms_tables import decode_bit
+        from sellib.scl.mms_tables import decode_bit
         r = self._rule("db:RELAY_EN?5:1", 0)
         assert decode_bit(r, 5) == 0
         assert decode_bit(r, 1) == 1
 
     def test_a_single_bit_dbpos_reads_from_the_bit_string_too(self):
-        from selfiles.scl.mms_tables import decode_bit
+        from sellib.scl.mms_tables import decode_bit
         r = self._rule("db:52A?1:2", 0)
         assert decode_bit(r, "01") == 0      # Dbpos 1, aberto
         assert decode_bit(r, "10") == 1      # Dbpos 2, fechado
@@ -301,7 +301,7 @@ class TestDecodeBit:
         """A Dbpos 3 (bad-state) against a `?1:2` point is neither 0 nor 1.
         The bit has to disappear from the payload and the drawing paints it
         indeterminate -- the same rule as a failed access."""
-        from selfiles.scl.mms_tables import decode_bit
+        from sellib.scl.mms_tables import decode_bit
         r = self._rule("db:52A?1:2", 0)
         assert decode_bit(r, "11") is None   # Dbpos 3
         assert decode_bit(r, "00") is None   # Dbpos 0
@@ -310,7 +310,7 @@ class TestDecodeBit:
     def test_junk_is_no_reading_and_never_an_exception(self):
         """The polling loop must not die over one odd value: a thousand other
         bits depend on the same turn."""
-        from selfiles.scl.mms_tables import decode_bit
+        from sellib.scl.mms_tables import decode_bit
         r = self._rule("db:52A|52B?0:1:2:3", 0)
         for junk in ("", "abc", None, True, 3.5, b"\x01", {"error": "x"}):
             assert decode_bit(r, junk) is None, junk
@@ -326,17 +326,17 @@ class TestDecoratedRank:
     """
 
     def test_a_decorated_status_ranks_below_a_plain_boolean_one(self):
-        from selfiles.scl.mms_tables import da_rank
+        from sellib.scl.mms_tables import da_rank
         assert da_rank("stVal") < da_rank("stVal", decorated=True)
 
     def test_but_still_above_anything_else_and_above_a_control(self):
-        from selfiles.scl.mms_tables import da_rank
+        from sellib.scl.mms_tables import da_rank
         assert da_rank("stVal", decorated=True) < da_rank("actVal")
         assert da_rank("stVal", decorated=True) < da_rank("Oper.ctlVal")
 
     def test_the_existing_tiers_did_not_shift(self):
         """`tests/test_scd_saddr.py` compara `da_rank(...) == (2,)`."""
-        from selfiles.scl.mms_tables import da_rank
+        from sellib.scl.mms_tables import da_rank
         assert da_rank("stVal") == (0,)
         assert da_rank("actVal") == (1,)
         assert da_rank("Oper.ctlVal") == (2,)
@@ -352,7 +352,7 @@ class TestEnumStatusDas:
     """
 
     def test_dirgeneral_is_readable_only_with_a_rule(self):
-        from selfiles.scl.mms_tables import is_boolean_status, is_enum_status
+        from sellib.scl.mms_tables import is_boolean_status, is_enum_status
         assert is_enum_status("dirGeneral")
         assert not is_boolean_status("dirGeneral")
 
@@ -360,11 +360,11 @@ class TestEnumStatusDas:
         """`stVal` is the DA of a boolean SPS AND of an enumerated DPS/INS.
         The decoration separates them, not the DA's name -- which is why the
         gate demands the rule and not just the name."""
-        from selfiles.scl.mms_tables import is_boolean_status, is_enum_status
+        from sellib.scl.mms_tables import is_boolean_status, is_enum_status
         assert is_enum_status("stVal") and is_boolean_status("stVal")
 
     def test_a_float_or_a_control_is_not_an_enum_status_either(self):
-        from selfiles.scl.mms_tables import is_enum_status
+        from sellib.scl.mms_tables import is_enum_status
         for da in ("instMag.f", "Oper.ctlVal", "q", "setVal"):
             assert not is_enum_status(da), da
 
@@ -457,13 +457,13 @@ class TestOneBadFileCannotTakeTheRegistryDown:
         exactly what stops the next `_load()` from noticing. Without this the
         fake tables leak into every module that runs after this one.
         """
-        from selfiles.scl import mms_tables as mt
+        from sellib.scl import mms_tables as mt
 
         yield
         mt.invalidate()
 
     def _registry(self, tmp_path, monkeypatch, files):
-        from selfiles.scl import mms_tables as mt
+        from sellib.scl import mms_tables as mt
 
         for name, body in files.items():
             (tmp_path / name).write_text(body, encoding="utf-8")

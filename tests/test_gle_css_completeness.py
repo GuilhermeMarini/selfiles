@@ -20,7 +20,7 @@ import xml.etree.ElementTree as ET
 
 import pytest
 
-from selfiles.gle import CSS, render_page
+from sellib.gle import CSS, render_page
 
 # Classes on a GROUP (`<g>`) are hooks for JavaScript and the live overlay, not
 # paint: `symbol-grp` and `gate-grp` are how the dashboard finds an element.
@@ -97,7 +97,7 @@ def test_every_css_class_the_renderers_ask_for_is_declared():
     """The static half: the `css_class=` arguments in the module itself."""
     import inspect
 
-    from selfiles import gle
+    from sellib import gle
 
     asked = set(re.findall(r'css_class="([\w-]+)"', inspect.getsource(gle)))
     declared = _declared_in(CSS)

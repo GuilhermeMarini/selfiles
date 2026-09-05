@@ -13,7 +13,7 @@ An RDB is an OLE compound document with this structure:
 This module takes the raw bytes of an RDB, extracts every stream preserving
 the hierarchy, and lists the relays with their GLE files.
 
-The extraction lives in a cache keyed by CONTENT (see `selfiles.rdb_cache`),
+The extraction lives in a cache keyed by CONTENT (see `sellib.rdb_cache`),
 not in a per-tool directory keyed by name. Two identical files are the same
 file: name collisions stopped existing, and the extraction is reused across
 sessions and across restarts.
@@ -32,8 +32,8 @@ from pathlib import Path
 
 import olefile
 
-from selfiles import _paths, rdb_cache
-from selfiles.models import relay_models
+from sellib import _paths, rdb_cache
+from sellib.models import relay_models
 
 # Letters, digits, dot, hyphen, underscore and space survive in a name that
 # becomes a filesystem path. Everything else becomes "_".
@@ -413,7 +413,7 @@ def process_upload(data: bytes, filename: str, cache_root: Path | None = None,
     `.../extracted/`. Two uploads of the same content -- by the same caller or
     another, today or after a restart -- reuse the same extraction.
     `cache_root` overrides the cache root; None uses whatever
-    `selfiles.configure` was given.
+    `sellib.configure` was given.
 
     `display_name` comes from the name THIS upload carried, not from the
     cache, or everyone would see the name of whoever uploaded it first.

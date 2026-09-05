@@ -14,7 +14,7 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from selfiles import __version__
+from sellib import __version__
 
 ROOT = Path(__file__).resolve().parent.parent
 PYPROJECT = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
@@ -58,7 +58,7 @@ def test_the_two_version_literals_agree():
     this test nothing compared them. The drift is silent and one-directional in
     practice: a release bumps `pyproject.toml`, the wheel goes to PyPI, and the
     package it installs still answers the old number when asked. A consumer
-    pinning `selfiles>=X` then gets a distribution whose own code denies the
+    pinning `sellib>=X` then gets a distribution whose own code denies the
     version the index served. The project this library was extracted from
     guards the same pair in `tests/test_version.py`; this is that guard, for a
     package whose version is a literal rather than a `VERSION` file.

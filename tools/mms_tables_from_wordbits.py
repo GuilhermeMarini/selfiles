@@ -33,18 +33,18 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
-from selfiles._paths import PACKAGE_DATA  # noqa: E402
-from selfiles.scl.mms_tables import fc_rank as _fc_rank  # noqa: E402
-from selfiles.scl.read import ScdDocument  # noqa: E402
+from sellib._paths import PACKAGE_DATA  # noqa: E402
+from sellib.scl.mms_tables import fc_rank as _fc_rank  # noqa: E402
+from sellib.scl.read import ScdDocument  # noqa: E402
 
 # The factory ICD corpus is not in any repository (231 MB of vendor
-# files); point SELFILES_ICD_FIXTURES at a local copy.
-FIXTURES_DIR = Path(os.environ.get("SELFILES_ICD_FIXTURES", "fixtures"))
+# files); point SELLIB_ICD_FIXTURES at a local copy.
+FIXTURES_DIR = Path(os.environ.get("SELLIB_ICD_FIXTURES", "fixtures"))
 MMS_MAP_OUT = PACKAGE_DATA / "mms_map"  # noqa: E402
 
 CORPUS = {"411L", "451", "487E", "311C1", "751", "2414", "2440"}
 
-# FC_PREFERENCE and its rank helper now live in selfiles/scl/mms_tables.py --
+# FC_PREFERENCE and its rank helper now live in sellib/scl/mms_tables.py --
 # the library side of the same data -- so this generator and
 # PAC CT's live-SCD resolver import ONE definition
 # instead of keeping two copies that can drift apart silently.

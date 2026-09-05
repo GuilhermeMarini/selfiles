@@ -13,9 +13,9 @@ import logging
 
 import pytest
 
-from selfiles._paths import PACKAGE_DATA
-from selfiles.models import relay_models as rm
-from selfiles.scl.mms_tables import norm_part
+from sellib._paths import PACKAGE_DATA
+from sellib.models import relay_models as rm
+from sellib.scl.mms_tables import norm_part
 
 RELAY_MODELS_DIR = PACKAGE_DATA / "relay_models"
 
@@ -247,7 +247,7 @@ MMS_MAP_KNOWN_EXTRA = {
 
 
 def test_every_shipped_mms_table_belongs_to_a_known_relay_model():
-    from selfiles.scl import mms_tables
+    from sellib.scl import mms_tables
 
     models = {norm_part(m.replace("SEL-", ""))
               for m in _registry_models(RELAY_MODELS_DIR)}

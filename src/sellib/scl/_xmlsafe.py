@@ -35,7 +35,7 @@ and stops at the root element, so it reads a few hundred bytes of a 22 MB file
 that would defeat a "look at the first N bytes" check.
 
 This module lives under `scl/` because `scl/` imports nothing else from
-`selfiles`, on purpose, so it can leave as its own library later. The two
+`sellib`, on purpose, so it can leave as its own library later. The two
 callers outside it import inwards, the way `match.py` already does.
 """
 

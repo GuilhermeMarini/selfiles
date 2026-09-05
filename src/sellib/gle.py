@@ -9,7 +9,7 @@ Each page becomes one SVG with:
   - a data attribute on every SYMBOL, so a live overlay can colour it
 
 Usage:
-    python3 -m selfiles.gle /path/to/GL1.gle.xml [--page "TRIP"]
+    python3 -m sellib.gle /path/to/GL1.gle.xml [--page "TRIP"]
 """
 
 from __future__ import annotations
@@ -21,7 +21,7 @@ import xml.etree.ElementTree as ET
 from collections import defaultdict
 from pathlib import Path
 
-from selfiles.scl._xmlsafe import reject_dtd_in_bytes
+from sellib.scl._xmlsafe import reject_dtd_in_bytes
 
 # Espacamento padrao entre portas verticais (em px do canvas GLE)
 PORT_SPACING = 12
