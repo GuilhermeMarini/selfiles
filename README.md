@@ -8,7 +8,10 @@ Nothing here talks to a relay, opens a socket, or knows what a web request is.
 > **Renamed.** This library was published as `selfiles` for 1.x. From 2.0.0 it
 > is `SELlib`, and the import moved with it — `import sellib`, not
 > `import selfiles`. Nothing else changed in 2.0.0; the major is the rename.
-> `selfiles` 1.1.1 stays on PyPI and is not maintained.
+> The `selfiles` distribution has been removed from PyPI, so there is no
+> version of it left to install: `import selfiles` does not resolve to
+> anything, and a requirements file naming it will fail rather than
+> quietly install something older.
 
 ```python
 import sellib
