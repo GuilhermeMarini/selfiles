@@ -60,4 +60,4 @@ __all__ = [
     "writable_data_dir",
 ]
 
-__version__ = "1.1.0"
+__version__ = "1.1.1"
